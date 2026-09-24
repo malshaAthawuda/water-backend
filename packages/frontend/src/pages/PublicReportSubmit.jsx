@@ -5,7 +5,7 @@ import {
     Stack, CircularProgress, Alert, MenuItem, Stepper, Step, StepLabel, Select, InputLabel, FormControl
 } from '@mui/material';
 import { CloudUpload as CloudUploadIcon } from '@mui/icons-material';
-import { createPublicReport, updatePublicReport, submitPublicReport, uploadPublicReportImage } from '../services/publicReportService';
+import { createPublicReport, updatePublicReport, submitPublicReport } from '../services/publicReportService';
 import { useAuth } from '../context/AuthContext';
 
 const WATER_SOURCES = ['well', 'river', 'lake', 'tap', 'tank', 'canal', 'spring', 'rainwater', 'borehole', 'other'];
@@ -15,6 +15,7 @@ export default function PublicReportSubmit() {
     const { isAuthenticated, user } = useAuth();
     const [activeStep, setActiveStep] = useState(0);
     const [reportId, setReportId] = useState(null);
+    const [trackingCode, setTrackingCode] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -37,8 +38,9 @@ export default function PublicReportSubmit() {
             if (activeStep === 0) {
                 // Step 1: Create wizard
                 if (!nic.trim()) throw new Error('NIC is required');
-                const report = await createPublicReport(nic.trim());
+                const { report, trackingCode: tc } = await createPublicReport(nic.trim());
                 setReportId(report._id);
+                setTrackingCode(tc);
             } else if (activeStep === 1) {
                 // Step 2: Save details
                 if (!waterSource) throw new Error('Water source type is required');
@@ -52,17 +54,11 @@ export default function PublicReportSubmit() {
                     currentStep: 2
                 });
             } else if (activeStep === 2) {
-                // Step 3: Image upload (optional)
-                if (image) {
-                    const formData = new FormData();
-                    formData.append('imageType', 'water_source');
-                    formData.append('images', image);
-                    await uploadPublicReportImage(reportId, formData);
-                }
+                // Step 3: Image upload (skip for now - requires multipart re-implementation)
             } else if (activeStep === steps.length - 1) {
                 // Final submit
                 await submitPublicReport(reportId);
-                navigate(trackPath, { state: { message: 'Report submitted successfully!' } });
+                navigate(trackPath, { state: { message: 'Report submitted successfully!', trackingCode } });
                 return;
             }
             setActiveStep((prev) => prev + 1);
