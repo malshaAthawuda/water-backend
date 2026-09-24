@@ -30,12 +30,35 @@ const testValueSchema = {
 
 const publicReportSchema = new mongoose.Schema(
     {
-        // ── Identity ──────────────────────────────────────────────
+        // ── Identity & Secure Tracking ────────────────────────────
         nic: {
             type: String,
             required: [true, 'NIC number is required'],
             trim: true,
             index: true,
+        },
+        trackingCode: {
+            type: String,
+            unique: true,
+            sparse: true,
+            index: true,
+            uppercase: true,
+            trim: true,
+        },
+        accessToken: {
+            type: String,
+            default: null,
+            index: true,
+        },
+        trackingOtp: {
+            type: String,
+            select: false,
+            default: null,
+        },
+        trackingOtpExpires: {
+            type: Date,
+            select: false,
+            default: null,
         },
         ipAddress: {
             type: String,
