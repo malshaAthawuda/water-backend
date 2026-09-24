@@ -132,8 +132,67 @@ const nicParamSchema = Joi.object({
         }),
 });
 
+/**
+ * Schema: Request email verification code for tracking by NIC
+ */
+const requestCodeSchema = Joi.object({
+    nic: Joi.string()
+        .trim()
+        .pattern(nicPattern)
+        .required()
+        .messages({
+            'string.pattern.base': 'Please provide a valid Sri Lankan NIC number',
+        }),
+    email: Joi.string()
+        .trim()
+        .email()
+        .required()
+        .messages({
+            'string.email': 'Please provide a valid email address',
+            'any.required': 'Email is required',
+        }),
+});
+
+/**
+ * Schema: Verify code and obtain tracking session
+ */
+const verifyCodeSchema = Joi.object({
+    nic: Joi.string()
+        .trim()
+        .pattern(nicPattern)
+        .required(),
+    email: Joi.string()
+        .trim()
+        .email()
+        .required(),
+    code: Joi.string()
+        .trim()
+        .length(6)
+        .pattern(/^[0-9]+$/)
+        .required()
+        .messages({
+            'string.length': 'Verification code must be 6 digits',
+            'string.pattern.base': 'Verification code must consist of digits only',
+        }),
+});
+
+/**
+ * Schema: Tracking code lookup
+ */
+const trackingCodeParamSchema = Joi.object({
+    trackingCode: Joi.string()
+        .trim()
+        .uppercase()
+        .min(6)
+        .max(30)
+        .required(),
+});
+
 module.exports = {
     createReportSchema,
     updateReportSchema,
     nicParamSchema,
+    requestCodeSchema,
+    verifyCodeSchema,
+    trackingCodeParamSchema,
 };

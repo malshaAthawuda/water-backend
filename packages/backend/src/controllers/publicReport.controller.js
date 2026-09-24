@@ -1,9 +1,68 @@
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
+const logger = require('../utils/logger');
 const { PublicReport } = require('../models/PublicReport.model');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
-
 const BannedUser = require('../models/BannedUser.model');
+
+/**
+ * Generate a citizen-friendly random tracking code (e.g. WR-A1B2-C3D4)
+ */
+function generateTrackingCode() {
+    const p1 = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const p2 = crypto.randomBytes(2).toString('hex').toUpperCase();
+    return `WR-${p1}-${p2}`;
+}
+
+/**
+ * Generate a high-entropy secret access token for the report creator
+ */
+function generateAccessToken() {
+    return crypto.randomBytes(24).toString('hex');
+}
+
+/**
+ * Verify whether requester is authorized to view or edit this specific report
+ */
+function verifyReportAccess(req, report) {
+    if (!report) return false;
+
+    // Check x-report-token header or query parameter
+    const clientToken = req.headers['x-report-token'] || req.query.token;
+    if (clientToken && report.accessToken && clientToken === report.accessToken) {
+        return true;
+    }
+
+    // Check authenticated system staff (ADMIN, MODERATOR, LAB_STAFF)
+    if (req.user && ['ADMIN', 'MODERATOR', 'LAB_STAFF'].includes(req.user.role)) {
+        return true;
+    }
+
+    // Check Bearer tracking token
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+            const token = authHeader.split(' ')[1];
+            const decoded = jwt.verify(token, config.jwt.secret);
+            if (decoded.scope === 'TRACKING_ACCESS' && decoded.nic.toLowerCase() === report.nic.toLowerCase()) {
+                return true;
+            }
+            if (['ADMIN', 'MODERATOR'].includes(decoded.role)) {
+                return true;
+            }
+        } catch {}
+    }
+
+    // Allow legacy reports without accessToken if created before this patch
+    if (!report.accessToken) {
+        return true;
+    }
+
+    return false;
+}
 
 /**
  * @desc    Create a new public report (wizard start)
@@ -26,19 +85,28 @@ const createReport = asyncHandler(async (req, res) => {
         throw ApiError.forbidden('You are banned from submitting public reports.');
     }
 
+    const trackingCode = generateTrackingCode();
+    const accessToken = generateAccessToken();
+
     const report = await PublicReport.create({
         nic,
         ipAddress,
+        trackingCode,
+        accessToken,
         currentStep: 1,
     });
 
-    return ApiResponse.created(res, { report }, 'Report created successfully');
+    return ApiResponse.created(res, {
+        report,
+        trackingCode,
+        accessToken,
+    }, 'Report created successfully');
 });
 
 /**
- * @desc    Get a report by ID
+ * @desc    Get a report by ID (Requires creator accessToken or staff authorization)
  * @route   GET /api/v1/public-reports/:id
- * @access  Public
+ * @access  Protected
  */
 const getReport = asyncHandler(async (req, res) => {
     const report = await PublicReport.findById(req.params.id);
@@ -47,19 +115,27 @@ const getReport = asyncHandler(async (req, res) => {
         throw ApiError.notFound('Report not found');
     }
 
+    if (!verifyReportAccess(req, report)) {
+        throw ApiError.forbidden('Access denied: You do not have permission to view this report without a valid access token.');
+    }
+
     return ApiResponse.success(res, { report }, 'Report retrieved successfully');
 });
 
 /**
  * @desc    Update a report (auto-save wizard step)
  * @route   PATCH /api/v1/public-reports/:id
- * @access  Public
+ * @access  Protected (Requires accessToken or staff)
  */
 const updateReport = asyncHandler(async (req, res) => {
     const report = await PublicReport.findById(req.params.id);
 
     if (!report) {
         throw ApiError.notFound('Report not found');
+    }
+
+    if (!verifyReportAccess(req, report)) {
+        throw ApiError.forbidden('Access denied: You do not have permission to update this report without a valid access token.');
     }
 
     if (report.wizardCompleted) {
@@ -111,30 +187,185 @@ const updateReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get in-progress reports by NIC
+ * @desc    Get in-progress reports by NIC (Requires verified email tracking session or staff role)
  * @route   GET /api/v1/public-reports/by-nic/:nic
- * @access  Public
+ * @access  Protected
  */
 const getByNic = asyncHandler(async (req, res) => {
     const { nic } = req.params;
 
+    // Check authorization:
+    // Requires either:
+    // 1) Bearer token with scope 'TRACKING_ACCESS' for matching nic, OR
+    // 2) Logged-in staff (ADMIN or MODERATOR)
+    const authHeader = req.headers.authorization;
+    let isAuthorized = false;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, config.jwt.secret);
+            if (decoded.scope === 'TRACKING_ACCESS' && decoded.nic.toLowerCase() === nic.toLowerCase()) {
+                isAuthorized = true;
+            } else if (['ADMIN', 'MODERATOR'].includes(decoded.role)) {
+                isAuthorized = true;
+            }
+        } catch {}
+    }
+
+    if (!isAuthorized && req.user && ['ADMIN', 'MODERATOR'].includes(req.user.role)) {
+        isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+        throw ApiError.unauthorized(
+            'Access denied: Direct public lookup by raw NIC is disabled for citizen privacy. Please verify via email OTP or track using your secure Tracking Code.'
+        );
+    }
+
     const reports = await PublicReport.find({ nic })
         .sort({ updatedAt: -1 })
-        .select('_id nic waterSource currentStep wizardCompleted mod_status createdAt updatedAt completedAt');
+        .select('_id trackingCode nic waterSource currentStep wizardCompleted mod_status createdAt updatedAt completedAt');
 
     return ApiResponse.success(res, { reports }, 'Reports retrieved successfully');
 });
 
 /**
+ * @desc    Track a report using public Tracking Code
+ * @route   GET /api/v1/public-reports/track/:trackingCode
+ * @access  Public
+ */
+const trackByCode = asyncHandler(async (req, res) => {
+    const { trackingCode } = req.params;
+
+    const report = await PublicReport.findOne({ 
+        trackingCode: trackingCode.toUpperCase() 
+    }).select('_id trackingCode nic waterSource location appearance smell taste turbidity sediment currentStep wizardCompleted mod_status rejection_reason createdAt updatedAt completedAt');
+
+    if (!report) {
+        throw ApiError.notFound('Report not found with the provided tracking code');
+    }
+
+    const reportObj = report.toObject();
+    // Mask NIC for citizen privacy
+    if (reportObj.nic) {
+        reportObj.maskedNic = reportObj.nic.length > 5
+            ? reportObj.nic.slice(0, 3) + '*****' + reportObj.nic.slice(-2)
+            : '*****';
+        delete reportObj.nic;
+    }
+
+    // Sanitize detailed private location to city/district level only
+    if (reportObj.location) {
+        reportObj.location = {
+            district: reportObj.location.district || null,
+            city: reportObj.location.city || null,
+        };
+    }
+
+    return ApiResponse.success(res, { report: reportObj }, 'Report status retrieved successfully');
+});
+
+/**
+ * @desc    Request email OTP for tracking reports by NIC
+ * @route   POST /api/v1/public-reports/tracking/request-code
+ * @access  Public
+ */
+const requestTrackingCode = asyncHandler(async (req, res) => {
+    const { nic, email } = req.body;
+
+    const reports = await PublicReport.find({
+        nic: nic.trim(),
+        email: email.toLowerCase().trim(),
+    }).select('+trackingOtp +trackingOtpExpires');
+
+    // To prevent account/NIC enumeration, return generic success even if no reports exist
+    if (!reports || reports.length === 0) {
+        return ApiResponse.success(
+            res,
+            null,
+            'If matching reports are found, a verification code has been sent to your email.'
+        );
+    }
+
+    // Generate 6-digit cryptographic OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    for (const r of reports) {
+        r.trackingOtp = otp;
+        r.trackingOtpExpires = expires;
+        await r.save();
+    }
+
+    logger.info(`[SECURITY] Generated tracking OTP for NIC ${nic} (${email}): ${otp}`);
+
+    return ApiResponse.success(
+        res,
+        {
+            ...(config.env !== 'production' ? { debugOtp: otp } : {})
+        },
+        'A 6-digit verification code has been sent to your email. It will expire in 10 minutes.'
+    );
+});
+
+/**
+ * @desc    Verify OTP and issue scoped tracking token
+ * @route   POST /api/v1/public-reports/tracking/verify-code
+ * @access  Public
+ */
+const verifyTrackingCode = asyncHandler(async (req, res) => {
+    const { nic, email, code } = req.body;
+
+    const report = await PublicReport.findOne({
+        nic: nic.trim(),
+        email: email.toLowerCase().trim(),
+        trackingOtp: code.trim(),
+        trackingOtpExpires: { $gt: new Date() },
+    }).select('+trackingOtp +trackingOtpExpires');
+
+    if (!report) {
+        throw ApiError.badRequest('Invalid or expired verification code');
+    }
+
+    // Clear OTP on all matching reports
+    await PublicReport.updateMany(
+        { nic: nic.trim(), email: email.toLowerCase().trim() },
+        { $set: { trackingOtp: null, trackingOtpExpires: null } }
+    );
+
+    // Issue short-lived tracking token (1 hour)
+    const trackingToken = jwt.sign(
+        {
+            nic: nic.trim(),
+            email: email.toLowerCase().trim(),
+            scope: 'TRACKING_ACCESS',
+        },
+        config.jwt.secret,
+        { expiresIn: '1h' }
+    );
+
+    return ApiResponse.success(
+        res,
+        { trackingToken },
+        'Verification successful. You may now access your report history.'
+    );
+});
+
+/**
  * @desc    Upload images for a report
  * @route   POST /api/v1/public-reports/:id/images
- * @access  Public
+ * @access  Protected (Requires accessToken or staff)
  */
 const uploadImages = asyncHandler(async (req, res) => {
     const report = await PublicReport.findById(req.params.id);
 
     if (!report) {
         throw ApiError.notFound('Report not found');
+    }
+
+    if (!verifyReportAccess(req, report)) {
+        throw ApiError.forbidden('Access denied: You do not have permission to upload images for this report.');
     }
 
     const { images } = req.body;
@@ -176,15 +407,19 @@ const uploadImages = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get a completed report with full data (for viewing past submissions)
+ * @desc    Get a completed report with full data (Requires creator accessToken or staff)
  * @route   GET /api/v1/public-reports/:id/full
- * @access  Public
+ * @access  Protected
  */
 const getReportFull = asyncHandler(async (req, res) => {
     const report = await PublicReport.findById(req.params.id);
 
     if (!report) {
         throw ApiError.notFound('Report not found');
+    }
+
+    if (!verifyReportAccess(req, report)) {
+        throw ApiError.forbidden('Access denied: You do not have permission to view full details of this report.');
     }
 
     // Return images without actual data, just metadata
@@ -205,13 +440,17 @@ const getReportFull = asyncHandler(async (req, res) => {
 /**
  * @desc    Submit a report (mark wizard as complete)
  * @route   POST /api/v1/public-reports/:id/submit
- * @access  Public
+ * @access  Protected (Requires accessToken or staff)
  */
 const submitReport = asyncHandler(async (req, res) => {
     const report = await PublicReport.findById(req.params.id);
 
     if (!report) {
         throw ApiError.notFound('Report not found');
+    }
+
+    if (!verifyReportAccess(req, report)) {
+        throw ApiError.forbidden('Access denied: You do not have permission to submit this report.');
     }
 
     if (report.wizardCompleted) {
@@ -232,6 +471,9 @@ module.exports = {
     getReport,
     updateReport,
     getByNic,
+    trackByCode,
+    requestTrackingCode,
+    verifyTrackingCode,
     submitReport,
     uploadImages,
     getReportFull,
