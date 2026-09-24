@@ -13,9 +13,18 @@ process.env.NODE_ENV = 'test';
  * Connect to in-memory MongoDB before all tests
  */
 const connect = async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const uri = mongoServer.getUri();
-    await mongoose.connect(uri);
+    if (process.env.TEST_MONGODB_URI) {
+        await mongoose.connect(process.env.TEST_MONGODB_URI);
+        return;
+    }
+    try {
+        mongoServer = await MongoMemoryServer.create();
+        const uri = mongoServer.getUri();
+        await mongoose.connect(uri);
+    } catch {
+        // Fallback to local MongoDB instance
+        await mongoose.connect('mongodb://127.0.0.1:27017/water_quality_test_db');
+    }
 };
 
 /**
@@ -32,9 +41,13 @@ const clearDatabase = async () => {
  * Close connection and stop MongoDB after all tests
  */
 const closeDatabase = async () => {
-    await mongoose.connection.dropDatabase();
-    await mongoose.connection.close();
-    await mongoServer.stop();
+    try {
+        await mongoose.connection.dropDatabase();
+        await mongoose.connection.close();
+    } catch {}
+    if (mongoServer) {
+        await mongoServer.stop();
+    }
 };
 
 module.exports = {
