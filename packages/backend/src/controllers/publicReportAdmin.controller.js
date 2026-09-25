@@ -5,6 +5,7 @@ const { ModerationLog, ModerationAction, ModerationTargetType } = require('../mo
 const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
+const { detectImageType, stripDataUriPrefix } = require('../utils/imageValidation');
 
 // ─── List all reports (with pagination, filtering, sorting) ──────
 const listReports = asyncHandler(async (req, res) => {
@@ -252,8 +253,20 @@ const getImage = asyncHandler(async (req, res) => {
     const image = report.images.id(req.params.imageId);
     if (!image) throw ApiError.notFound('Image not found');
 
-    const buffer = Buffer.from(image.data, 'base64');
-    res.set('Content-Type', image.contentType);
+    const buffer = Buffer.from(stripDataUriPrefix(image.data), 'base64');
+
+    // Decide the type from the real bytes, never from the stored label.
+    // Anything that is not a genuine JPEG/PNG/WebP (e.g. older bad uploads) is
+    // sent as a plain download so a browser can never treat it as a web page.
+    const realType = detectImageType(buffer);
+    if (realType) {
+        res.set('Content-Type', realType);
+    } else {
+        res.set('Content-Type', 'application/octet-stream');
+        res.set('Content-Disposition', 'attachment; filename="file.bin"');
+    }
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'; sandbox");
     res.set('Content-Length', buffer.length);
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(buffer);

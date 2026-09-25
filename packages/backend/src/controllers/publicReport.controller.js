@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const BannedUser = require('../models/BannedUser.model');
+const { decodeAndValidateImage, sanitizeFilename } = require('../utils/imageValidation');
 
 /**
  * Generate a citizen-friendly random tracking code (e.g. WR-A1B2-C3D4)
@@ -381,20 +382,24 @@ const uploadImages = asyncHandler(async (req, res) => {
     }
 
     for (const img of images) {
-        if (!img.data || !img.contentType || !img.imageType) {
+        if (!img || !img.data || !img.contentType || !img.imageType) {
             throw ApiError.badRequest('Each image must have data, contentType, and imageType');
         }
 
         // ~5MB limit per image (base64 inflates ~33%)
-        if (img.data.length > 7 * 1024 * 1024) {
+        if (typeof img.data === 'string' && img.data.length > 7 * 1024 * 1024) {
             throw ApiError.badRequest('Each image must be under 5MB');
         }
 
+        // Never trust the client's label: check the real bytes are a JPEG/PNG/WebP
+        // and store the type the server detected, not the one the client claimed.
+        const { base64, detectedType } = decodeAndValidateImage(img.data, img.contentType);
+
         report.images.push({
             imageType: img.imageType,
-            data: img.data,
-            contentType: img.contentType,
-            filename: img.filename || null,
+            data: base64,
+            contentType: detectedType,
+            filename: sanitizeFilename(img.filename),
         });
     }
 
