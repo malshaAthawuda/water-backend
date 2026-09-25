@@ -5,6 +5,10 @@ const { connect, clearDatabase, closeDatabase } = require('./setup');
 const { PublicReport } = require('../models/PublicReport.model');
 const BannedUser = require('../models/BannedUser.model');
 
+// Smallest byte sequences that begin with real PNG / JPEG file signatures
+const PNG_B64 = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)]).toString('base64');
+const JPEG_B64 = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16)]).toString('base64');
+
 describe('Public Report Module (Wizard)', () => {
 
     beforeAll(async () => {
@@ -125,8 +129,8 @@ describe('Public Report Module (Wizard)', () => {
                 .post(`/api/v1/public-reports/${rp._id}/images`)
                 .send({
                     images: [
-                        { imageType: 'water_source', data: 'data:image/png;base64,...', contentType: 'image/png' },
-                        { imageType: 'water_sample', data: 'data:image/jpeg;base64,...', contentType: 'image/jpeg' }
+                        { imageType: 'water_source', data: PNG_B64, contentType: 'image/png' },
+                        { imageType: 'water_sample', data: JPEG_B64, contentType: 'image/jpeg' }
                     ]
                 });
                 
