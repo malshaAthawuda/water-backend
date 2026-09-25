@@ -1,13 +1,33 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const config = require('../config');
 const validate = require('../middlewares/validate.middleware');
 const {
     createReportSchema,
     updateReportSchema,
+    imageUploadSchema,
     nicParamSchema,
     requestCodeSchema,
     verifyCodeSchema,
     trackingCodeParamSchema,
 } = require('../validations/publicReport.validation');
+
+// Stricter limiter for anonymous write actions (report creation and image
+// uploads) to reduce storage-exhaustion abuse. Disabled in the test env, the
+// same way the global limiter is, to keep tests deterministic.
+const publicWriteLimiter =
+    config.env === 'test'
+        ? (req, res, next) => next()
+        : rateLimit({
+              windowMs: 15 * 60 * 1000,
+              max: 30,
+              standardHeaders: true,
+              legacyHeaders: false,
+              message: {
+                  success: false,
+                  message: 'Too many submissions, please try again later.',
+              },
+          });
 const {
     createReport,
     getReport,
@@ -39,7 +59,7 @@ const router = express.Router();
  *       201:
  *         description: Created
  */
-router.post('/', validate(createReportSchema), createReport);
+router.post('/', publicWriteLimiter, validate(createReportSchema), createReport);
 
 /**
  * @swagger
@@ -215,6 +235,6 @@ router.post('/:id/submit', submitReport);
  *       200:
  *         description: Images uploaded
  */
-router.post('/:id/images', uploadImages);
+router.post('/:id/images', publicWriteLimiter, validate(imageUploadSchema), uploadImages);
 
 module.exports = router;

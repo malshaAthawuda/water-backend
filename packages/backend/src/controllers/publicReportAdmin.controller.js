@@ -268,7 +268,9 @@ const getImage = asyncHandler(async (req, res) => {
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Content-Security-Policy', "default-src 'none'; sandbox");
     res.set('Content-Length', buffer.length);
-    res.set('Cache-Control', 'public, max-age=86400');
+    // These images require a moderator/admin login, so they must not be stored
+    // in shared/proxy caches where another user could retrieve them.
+    res.set('Cache-Control', 'private, no-store');
     res.send(buffer);
 });
 
