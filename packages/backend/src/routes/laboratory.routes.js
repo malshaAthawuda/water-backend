@@ -164,6 +164,45 @@ router.put(
  *         description: Deleted
  */
 router.delete('/:id', deleteLaboratory);
+
+/**
+ * @swagger
+ * /laboratories/{id}/permanent:
+ *   delete:
+ *     summary: Permanently delete a laboratory (Admin only)
+ *     description: >
+ *       Permanently removes a laboratory from the database.
+ *       SECURITY CONTROLS:
+ *       1. Requires ?confirm=true query parameter as an intentional double-confirmation guard.
+ *       2. Blocked if any active lab test requests (pending, accepted, in-progress, scheduled) reference this lab.
+ *       3. Audit log is recorded with actor ID, timestamp, and historical reference count.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Laboratory MongoDB ObjectId
+ *       - in: query
+ *         name: confirm
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [true]
+ *         description: Must be "true" to confirm intentional permanent deletion
+ *     responses:
+ *       200:
+ *         description: Laboratory permanently deleted with audit summary
+ *       400:
+ *         description: Missing confirmation param or invalid ID
+ *       404:
+ *         description: Laboratory not found
+ *       409:
+ *         description: Cannot delete - active lab test requests exist
+ */
 router.delete('/:id/permanent', permanentlyDeleteLaboratory);
 
 module.exports = router;
