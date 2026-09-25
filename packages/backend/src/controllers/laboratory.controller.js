@@ -1,7 +1,9 @@
 const Laboratory = require('../models/Laboratory.model');
+const { LabTestRequest } = require('../models/LabTestRequest.model');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const logger = require('../utils/logger');
 
 /**
  * Create a new laboratory
@@ -198,19 +200,145 @@ const deleteLaboratory = asyncHandler(async (req, res) => {
 
 /**
  * Permanently delete a laboratory
- * DELETE /api/admin/laboratories/:id?permanent=true
+ * DELETE /api/v1/laboratories/:id/permanent?confirm=true
+ *
+ * Security controls:
+ *  1. Requires ?confirm=true query parameter (intentional double-confirmation)
+ *  2. Blocks deletion if any ACTIVE lab test requests reference this lab
+ *  3. Only allows deletion when all references are completed/rejected (historical)
+ *  4. Records a structured audit log entry (who, when, what was deleted)
  */
 const permanentlyDeleteLaboratory = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { confirm } = req.query;
 
-  const laboratory = await Laboratory.findByIdAndDelete(id);
+  // 1. Validate MongoDB ObjectId format
+  if (!require('mongoose').Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid laboratory ID format');
+  }
 
+  // 2. Require explicit confirmation query param to prevent accidental deletions
+  if (confirm !== 'true') {
+    throw new ApiError(
+      400,
+      'Permanent deletion requires explicit confirmation. Add ?confirm=true to your request.'
+    );
+  }
+
+  // 3. Find the laboratory first (so we can inspect it before deleting)
+  const laboratory = await Laboratory.findById(id);
   if (!laboratory) {
     throw new ApiError(404, 'Laboratory not found');
   }
 
+  // 4. Dependency check – find ALL lab test requests that reference this lab
+  const BLOCKING_STATUSES = [
+    'pending_acceptance',
+    'accepted',
+    'sample_scheduled',
+    'sample_collected',
+    'testing_in_progress',
+  ];
+
+  const activeRequests = await LabTestRequest.find({
+    laboratory: id,
+    status: { $in: BLOCKING_STATUSES },
+  }).select('requestNumber status priority scheduledCollection createdAt updatedAt');
+
+  if (activeRequests.length > 0) {
+    const summary = activeRequests.map(r => `${r.requestNumber} (${r.status})`).join(', ');
+    const err = ApiError.conflict(
+      `Cannot permanently delete laboratory "${laboratory.name}". ` +
+      `It has ${activeRequests.length} active or scheduled lab test request(s): ${summary}. ` +
+      `Reassign or complete these requests before attempting deletion.`,
+      activeRequests
+    );
+    throw err;
+  }
+
+  // 5. Count completed/rejected historical references (allowed but should be noted)
+  const historicalCount = await LabTestRequest.countDocuments({
+    laboratory: id,
+    status: { $in: ['completed', 'rejected'] },
+  });
+
+  // 6. Perform the permanent deletion
+  await Laboratory.findByIdAndDelete(id);
+
+  // 7. Audit log – record who deleted the lab, when, and what historical data remains
+  logger.warn(`AUDIT: Laboratory permanently deleted`, {
+    action: 'PERMANENT_DELETE_LABORATORY',
+    laboratoryId: id,
+    laboratoryName: laboratory.name,
+    deletedBy: req.user?._id || 'unknown',
+    deletedByEmail: req.user?.email || 'unknown',
+    timestamp: new Date().toISOString(),
+    historicalReferencesCount: historicalCount,
+    note: historicalCount > 0
+      ? `${historicalCount} completed/rejected LabTestRequest(s) still reference this lab ID`
+      : 'No historical references remain',
+  });
+
   return res.status(200).json(
-    new ApiResponse(200, {}, 'Laboratory permanently deleted successfully')
+    new ApiResponse(200, {
+      deletedLaboratory: {
+        id: laboratory._id,
+        name: laboratory.name,
+        email: laboratory.email,
+      },
+      historicalReferences: historicalCount,
+      auditNote: historicalCount > 0
+        ? `${historicalCount} completed/rejected lab test request(s) retain historical reference to this lab`
+        : 'No historical references',
+    }, `Laboratory "${laboratory.name}" has been permanently deleted`)
+  );
+});
+
+/**
+ * Check laboratory dependencies before deletion
+ * GET /api/v1/laboratories/:id/dependencies
+ */
+const checkLaboratoryDependencies = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!require('mongoose').Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid laboratory ID format');
+  }
+
+  const laboratory = await Laboratory.findById(id);
+  if (!laboratory) {
+    throw new ApiError(404, 'Laboratory not found');
+  }
+
+  const BLOCKING_STATUSES = [
+    'pending_acceptance',
+    'accepted',
+    'sample_scheduled',
+    'sample_collected',
+    'testing_in_progress',
+  ];
+
+  const activeRequests = await LabTestRequest.find({
+    laboratory: id,
+    status: { $in: BLOCKING_STATUSES },
+  })
+    .select('requestNumber status priority scheduledCollection createdAt updatedAt')
+    .sort({ createdAt: -1 });
+
+  const historicalCount = await LabTestRequest.countDocuments({
+    laboratory: id,
+    status: { $in: ['completed', 'rejected'] },
+  });
+
+  return res.status(200).json(
+    new ApiResponse(200, {
+      laboratoryId: id,
+      laboratoryName: laboratory.name,
+      canPermanentlyDelete: activeRequests.length === 0,
+      activeRequestsCount: activeRequests.length,
+      activeRequests,
+      historicalCount,
+    }, 'Laboratory dependencies checked successfully')
   );
 });
 
@@ -221,4 +349,5 @@ module.exports = {
   updateLaboratory,
   deleteLaboratory,
   permanentlyDeleteLaboratory,
+  checkLaboratoryDependencies,
 };

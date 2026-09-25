@@ -10,6 +10,7 @@ const {
   updateLaboratory,
   deleteLaboratory,
   permanentlyDeleteLaboratory,
+  checkLaboratoryDependencies,
 } = require('../controllers/laboratory.controller');
 
 const router = express.Router();
@@ -164,6 +165,73 @@ router.put(
  *         description: Deleted
  */
 router.delete('/:id', deleteLaboratory);
+
+/**
+ * @swagger
+ * /laboratories/{id}/permanent:
+ *   delete:
+ *     summary: Permanently delete a laboratory (Admin only)
+ *     description: >
+ *       Permanently removes a laboratory from the database.
+ *       SECURITY CONTROLS:
+ *       1. Requires ?confirm=true query parameter as an intentional double-confirmation guard.
+ *       2. Blocked if any active lab test requests (pending, accepted, in-progress, scheduled) reference this lab.
+ *       3. Audit log is recorded with actor ID, timestamp, and historical reference count.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Laboratory MongoDB ObjectId
+ *       - in: query
+ *         name: confirm
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [true]
+ *         description: Must be "true" to confirm intentional permanent deletion
+ *     responses:
+ *       200:
+ *         description: Laboratory permanently deleted with audit summary
+ *       400:
+ *         description: Missing confirmation param or invalid ID
+ *       404:
+ *         description: Laboratory not found
+ *       409:
+ *         description: Cannot delete - active lab test requests exist
+ */
+/**
+ * @swagger
+ * /laboratories/{id}/dependencies:
+ *   get:
+ *     summary: Check laboratory dependencies before deletion (Admin only)
+ *     description: >
+ *       Checks whether any active or scheduled lab test requests reference this laboratory.
+ *       Used by the frontend to verify safety before permanent deletion.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Laboratory MongoDB ObjectId
+ *     responses:
+ *       200:
+ *         description: Laboratory dependency check results
+ *       400:
+ *         description: Invalid laboratory ID format
+ *       404:
+ *         description: Laboratory not found
+ */
+router.get('/:id/dependencies', checkLaboratoryDependencies);
+
 router.delete('/:id/permanent', permanentlyDeleteLaboratory);
 
 module.exports = router;
