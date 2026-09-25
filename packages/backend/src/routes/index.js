@@ -25,28 +25,12 @@ const router = express.Router();
  *     tags: [Core]
  *     responses:
  *       200:
- *         description: Server is healthy with system metrics
+ *         description: Server is healthy
  */
 router.get('/health', (req, res) => {
-    const healthCheck = {
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV || 'development',
-        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-        memory: {
-            used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
-            total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB',
-        },
-        system: {
-            platform: os.platform(),
-            cpus: os.cpus().length,
-            totalMemory: Math.round(os.totalmem() / 1024 / 1024 / 1024) + ' GB',
-            freeMemory: Math.round(os.freemem() / 1024 / 1024 / 1024) + ' GB',
-        },
-    };
-
-    return ApiResponse.success(res, healthCheck, 'Server is healthy');
+    return ApiResponse.success(res, {
+        status: 'healthy'
+    }, 'Server is healthy');
 });
 
 /**

@@ -1,4 +1,6 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const os = require('os');
 const { User, UserRole } = require('../models/User.model');
 const authenticate = require('../middlewares/auth.middleware');
 const authorize = require('../middlewares/authorize.middleware');
@@ -7,6 +9,44 @@ const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /admin/system-health:
+ *   get:
+ *     summary: Get detailed system diagnostics (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Detailed system diagnostics
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Admin only
+ */
+router.get('/system-health', authenticate, authorize(UserRole.ADMIN), asyncHandler(async (req, res) => {
+    const diagnostics = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || 'development',
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+        memory: {
+            used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+            total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB',
+        },
+        system: {
+            platform: os.platform(),
+            cpus: os.cpus().length,
+            totalMemory: Math.round(os.totalmem() / 1024 / 1024 / 1024) + ' GB',
+            freeMemory: Math.round(os.freemem() / 1024 / 1024 / 1024) + ' GB',
+        },
+    };
+
+    return ApiResponse.success(res, diagnostics, 'System diagnostics retrieved successfully');
+}));
 
 /**
  * @swagger
