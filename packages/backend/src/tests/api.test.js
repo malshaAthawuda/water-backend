@@ -13,14 +13,25 @@ describe('Health Check Endpoints', () => {
     });
 
     describe('GET /api/v1/health', () => {
-        it('should return healthy status', async () => {
+        it('should return healthy status without exposing sensitive system diagnostics', async () => {
             const res = await request(app)
                 .get('/api/v1/health')
                 .expect(200);
 
             expect(res.body.success).toBe(true);
             expect(res.body.data.status).toBe('healthy');
-            expect(res.body.data.mongodb).toBe('connected');
+            // Security verification: Sensitive system metrics must NOT be exposed publicly
+            expect(res.body.data.environment).toBeUndefined();
+            expect(res.body.data.mongodb).toBeUndefined();
+            expect(res.body.data.memory).toBeUndefined();
+            expect(res.body.data.system).toBeUndefined();
+            expect(res.body.data.uptime).toBeUndefined();
+        });
+
+        it('should protect detailed system diagnostics from unauthenticated public access', async () => {
+            await request(app)
+                .get('/api/v1/admin/system-health')
+                .expect(401);
         });
     });
 
