@@ -10,6 +10,7 @@ const {
   updateLaboratory,
   deleteLaboratory,
   permanentlyDeleteLaboratory,
+  checkLaboratoryDependencies,
 } = require('../controllers/laboratory.controller');
 
 const router = express.Router();
@@ -203,6 +204,34 @@ router.delete('/:id', deleteLaboratory);
  *       409:
  *         description: Cannot delete - active lab test requests exist
  */
+/**
+ * @swagger
+ * /laboratories/{id}/dependencies:
+ *   get:
+ *     summary: Check laboratory dependencies before deletion (Admin only)
+ *     description: >
+ *       Checks whether any active or scheduled lab test requests reference this laboratory.
+ *       Used by the frontend to verify safety before permanent deletion.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Laboratory MongoDB ObjectId
+ *     responses:
+ *       200:
+ *         description: Laboratory dependency check results
+ *       400:
+ *         description: Invalid laboratory ID format
+ *       404:
+ *         description: Laboratory not found
+ */
+router.get('/:id/dependencies', checkLaboratoryDependencies);
+
 router.delete('/:id/permanent', permanentlyDeleteLaboratory);
 
 module.exports = router;

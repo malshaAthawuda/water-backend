@@ -243,16 +243,17 @@ const permanentlyDeleteLaboratory = asyncHandler(async (req, res) => {
   const activeRequests = await LabTestRequest.find({
     laboratory: id,
     status: { $in: BLOCKING_STATUSES },
-  }).select('requestNumber status');
+  }).select('requestNumber status priority scheduledCollection createdAt updatedAt');
 
   if (activeRequests.length > 0) {
     const summary = activeRequests.map(r => `${r.requestNumber} (${r.status})`).join(', ');
-    throw new ApiError(
-      409,
+    const err = ApiError.conflict(
       `Cannot permanently delete laboratory "${laboratory.name}". ` +
-      `It has ${activeRequests.length} active lab test request(s): ${summary}. ` +
-      `Reassign or close these requests before attempting deletion.`
+      `It has ${activeRequests.length} active or scheduled lab test request(s): ${summary}. ` +
+      `Reassign or complete these requests before attempting deletion.`,
+      activeRequests
     );
+    throw err;
   }
 
   // 5. Count completed/rejected historical references (allowed but should be noted)
@@ -293,6 +294,54 @@ const permanentlyDeleteLaboratory = asyncHandler(async (req, res) => {
   );
 });
 
+/**
+ * Check laboratory dependencies before deletion
+ * GET /api/v1/laboratories/:id/dependencies
+ */
+const checkLaboratoryDependencies = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!require('mongoose').Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid laboratory ID format');
+  }
+
+  const laboratory = await Laboratory.findById(id);
+  if (!laboratory) {
+    throw new ApiError(404, 'Laboratory not found');
+  }
+
+  const BLOCKING_STATUSES = [
+    'pending_acceptance',
+    'accepted',
+    'sample_scheduled',
+    'sample_collected',
+    'testing_in_progress',
+  ];
+
+  const activeRequests = await LabTestRequest.find({
+    laboratory: id,
+    status: { $in: BLOCKING_STATUSES },
+  })
+    .select('requestNumber status priority scheduledCollection createdAt updatedAt')
+    .sort({ createdAt: -1 });
+
+  const historicalCount = await LabTestRequest.countDocuments({
+    laboratory: id,
+    status: { $in: ['completed', 'rejected'] },
+  });
+
+  return res.status(200).json(
+    new ApiResponse(200, {
+      laboratoryId: id,
+      laboratoryName: laboratory.name,
+      canPermanentlyDelete: activeRequests.length === 0,
+      activeRequestsCount: activeRequests.length,
+      activeRequests,
+      historicalCount,
+    }, 'Laboratory dependencies checked successfully')
+  );
+});
+
 module.exports = {
   createLaboratory,
   getAllLaboratories,
@@ -300,4 +349,5 @@ module.exports = {
   updateLaboratory,
   deleteLaboratory,
   permanentlyDeleteLaboratory,
+  checkLaboratoryDependencies,
 };
