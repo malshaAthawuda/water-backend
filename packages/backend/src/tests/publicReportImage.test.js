@@ -126,6 +126,41 @@ describe('Public report photo upload validation', () => {
             expect(await storedImages()).toHaveLength(0);
         });
     });
+
+    describe('request-shape validation (schema layer)', () => {
+        it('should reject a contentType outside the allowlist', async () => {
+            const res = await upload([{ imageType: 'water_source', data: PNG, contentType: 'application/pdf' }]);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('Allowed: JPEG, PNG, WebP');
+        });
+
+        it('should reject an unknown imageType', async () => {
+            const res = await upload([{ imageType: 'malware', data: PNG, contentType: 'image/png' }]);
+
+            expect(res.status).toBe(400);
+        });
+
+        it('should reject an empty images array', async () => {
+            const res = await upload([]);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('at least one image');
+        });
+
+        it('should reject more than 10 images at the schema layer', async () => {
+            const many = Array.from({ length: 11 }, () => ({
+                imageType: 'water_source',
+                data: PNG,
+                contentType: 'image/png',
+            }));
+            const res = await upload(many);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('Maximum 10 images');
+            expect(await storedImages()).toHaveLength(0);
+        });
+    });
 });
 
 describe('Serving stored photos to staff', () => {

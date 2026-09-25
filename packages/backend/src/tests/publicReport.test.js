@@ -150,7 +150,9 @@ describe('Public Report Module (Wizard)', () => {
                 .send({ images: dummyImages });
                 
             expect(res.status).toBe(400);
-            expect(res.body.message).toContain('Maximum 10 images');
+            // The 10-image limit is now enforced by the request-validation schema,
+            // so the detail arrives in the standard "Validation failed" envelope.
+            expect(JSON.stringify(res.body)).toContain('Maximum 10 images');
         });
     });
 
