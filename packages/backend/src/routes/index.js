@@ -25,7 +25,7 @@ const router = express.Router();
  *     tags: [Core]
  *     responses:
  *       200:
- *         description: Server is healthy with system metrics
+ *         description: Server is healthy
  */
 router.get('/health', (req, res) => {
     return ApiResponse.success(res, {
