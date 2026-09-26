@@ -1,7 +1,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../app');
-const { connect, clearDatabase, closeDatabase } = require('./setup');
+const { connect, clearDatabase, closeDatabase, promoteUser } = require('./setup');
 const { LabTestRequest, TestVerdict, SAFE_LIMITS } = require('../models/LabTestRequest.model');
 const { PublicReport } = require('../models/PublicReport.model');
 const Laboratory = require('../models/Laboratory.model');
@@ -17,13 +17,14 @@ const registerUser = async (overrides = {}) => {
         name: overrides.name || 'Test User',
         email: overrides.email || `testuser${userCounter}_${Date.now()}@example.com`,
         password: 'Password123',
-        ...(overrides.role ? { role: overrides.role } : { role: 'LAB_STAFF' })
     };
+    const role = overrides.role || 'LAB_STAFF';
     const res = await request(app).post('/api/v1/auth/register').send(userData);
     if (!res.body.data) {
          throw new Error(`Registration failed: ${JSON.stringify(res.body)}`);
     }
-    return { token: res.body.data.token, user: res.body.data.user };
+    await promoteUser(res.body.data.user.id, role);
+    return { token: res.body.data.token, user: { ...res.body.data.user, role } };
 };
 
 describe('Lab Testing Module (Unit, Integration & Performance)', () => {

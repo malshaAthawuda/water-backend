@@ -1,7 +1,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../app');
-const { connect, clearDatabase, closeDatabase } = require('./setup');
+const { connect, clearDatabase, closeDatabase, promoteUser } = require('./setup');
 const WaterSource = require('../models/WaterSource.model');
 
 // ─── Helper: Register a user and return token ───────────────────────────────
@@ -12,11 +12,14 @@ const registerUser = async (overrides = {}) => {
         name: overrides.name || 'Test User',
         email: overrides.email || `testuser${userCounter}_${Date.now()}@example.com`,
         password: 'Password123',
-        ...(overrides.role ? { role: overrides.role } : {}),
     };
     const res = await request(app).post('/api/v1/auth/register').send(userData);
     if (!res.body.data) {
         throw new Error(`Registration failed: ${JSON.stringify(res.body)}`);
+    }
+    if (overrides.role) {
+        await promoteUser(res.body.data.user.id, overrides.role);
+        return { token: res.body.data.token, user: { ...res.body.data.user, role: overrides.role } };
     }
     return { token: res.body.data.token, user: res.body.data.user };
 };

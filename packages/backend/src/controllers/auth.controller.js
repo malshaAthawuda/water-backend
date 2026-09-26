@@ -9,9 +9,9 @@ const { ModerationLog, ModerationAction } = require('../models/ModerationLog.mod
  * @access  Public
  */
 const register = asyncHandler(async (req, res) => {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
-    const result = await authService.register({ name, email, password, role });
+    const result = await authService.register({ name, email, password });
 
     return ApiResponse.created(res, result, 'User registered successfully');
 });

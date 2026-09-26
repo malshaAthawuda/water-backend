@@ -2,6 +2,7 @@ const express = require('express');
 const authController = require('../controllers/auth.controller');
 const authenticate = require('../middlewares/auth.middleware');
 const validate = require('../middlewares/validate.middleware');
+const { authLimiter } = require('../middlewares/rateLimit.middleware');
 const { registerSchema, loginSchema } = require('../validations/auth.validation');
 
 const router = express.Router();
@@ -30,7 +31,7 @@ const router = express.Router();
  *       201:
  *         description: Successfully registered
  */
-router.post('/register', validate(registerSchema), authController.register);
+router.post('/register', authLimiter, validate(registerSchema), authController.register);
 
 /**
  * @swagger
@@ -54,7 +55,7 @@ router.post('/register', validate(registerSchema), authController.register);
  *       200:
  *         description: Login successful
  */
-router.post('/login', validate(loginSchema), authController.login);
+router.post('/login', authLimiter, validate(loginSchema), authController.login);
 
 /**
  * @swagger

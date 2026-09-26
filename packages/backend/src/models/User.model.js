@@ -56,6 +56,16 @@ const userSchema = new mongoose.Schema(
         passwordChangedAt: {
             type: Date,
         },
+        // Brute-force protection (see auth.service.login)
+        failedLoginAttempts: {
+            type: Number,
+            default: 0,
+            select: false,
+        },
+        lockUntil: {
+            type: Date,
+            select: false,
+        },
     },
     {
         timestamps: true,
@@ -63,6 +73,8 @@ const userSchema = new mongoose.Schema(
             virtuals: true,
             transform: function (doc, ret) {
                 delete ret.password;
+                delete ret.failedLoginAttempts;
+                delete ret.lockUntil;
                 delete ret.__v;
                 return ret;
             },
@@ -113,6 +125,13 @@ userSchema.methods.changedPasswordAfter = function (jwtTimestamp) {
         return jwtTimestamp < changedTimestamp;
     }
     return false;
+};
+
+/**
+ * Instance method to check whether the account is temporarily locked
+ */
+userSchema.methods.isLocked = function () {
+    return !!(this.lockUntil && this.lockUntil.getTime() > Date.now());
 };
 
 /**

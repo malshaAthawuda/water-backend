@@ -5,13 +5,9 @@ import {
     Box,
     Button,
     Card,
-    FormControl,
     IconButton,
     InputAdornment,
-    InputLabel,
     Link,
-    MenuItem,
-    Select,
     TextField,
     Typography,
 } from '@mui/material';
@@ -23,13 +19,6 @@ import {
 } from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 
-const ROLE_OPTIONS = [
-    { value: 'USER', label: 'User' },
-    { value: 'LAB_STAFF', label: 'Lab Staff' },
-    { value: 'MODERATOR', label: 'Moderator' },
-    { value: 'ADMIN', label: 'Admin' },
-];
-
 export default function RegisterPage() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -38,7 +27,6 @@ export default function RegisterPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [role, setRole] = useState('USER');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -71,7 +59,6 @@ export default function RegisterPage() {
                 name: name.trim(),
                 email: email.trim(),
                 password,
-                role,
             });
 
             navigate('/login', {
@@ -195,22 +182,10 @@ export default function RegisterPage() {
                         }}
                     />
 
-                    <FormControl fullWidth sx={{ mb: 3 }}>
-                        <InputLabel id="role-label">Role</InputLabel>
-                        <Select
-                            labelId="role-label"
-                            value={role}
-                            label="Role"
-                            onChange={(e) => setRole(e.target.value)}
-                            disabled={loading}
-                        >
-                            {ROLE_OPTIONS.map((opt) => (
-                                <MenuItem key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        New accounts start with the standard User role. Lab staff, moderator
+                        and admin access is granted by an administrator.
+                    </Typography>
 
                     <Button
                         fullWidth
