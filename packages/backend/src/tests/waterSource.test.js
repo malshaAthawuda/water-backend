@@ -452,6 +452,62 @@ describe('Water Source Module', () => {
 
             expect(res.status).toBe(401);
         });
+
+        // Finding 5: unauthorized water-source status modification
+        describe('authorization (Finding 5)', () => {
+            const setStatus = (token, sourceId, body) => request(app)
+                .patch(`/api/v1/water-sources/${sourceId}/status`)
+                .set('Authorization', `Bearer ${token}`)
+                .send(body);
+
+            it('TC-WS-027a: should forbid another user from changing the status', async () => {
+                const { token: ownerToken } = await registerUser();
+                const { token: otherToken } = await registerUser();
+                const sourceId = (await createWaterSource(ownerToken)).body.data._id;
+
+                const res = await setStatus(otherToken, sourceId, {
+                    operational_status: 'Abandoned',
+                    notes: 'Do not drink',
+                });
+
+                expect(res.status).toBe(403);
+                expect(res.body.success).toBe(false);
+
+                const stored = await WaterSource.findById(sourceId);
+                expect(stored.operational_status).toBe('Functional');
+                expect(stored.description || '').not.toContain('Do not drink');
+            });
+
+            it('TC-WS-027b: should forbid LAB_STAFF who did not create the source', async () => {
+                const { token: ownerToken } = await registerUser();
+                const { token: labToken } = await registerUser({ role: 'LAB_STAFF' });
+                const sourceId = (await createWaterSource(ownerToken)).body.data._id;
+
+                const res = await setStatus(labToken, sourceId, { operational_status: 'Broken' });
+
+                expect(res.status).toBe(403);
+            });
+
+            it.each(['MODERATOR', 'ADMIN'])('TC-WS-027c: should allow a %s to change any status', async (role) => {
+                const { token: ownerToken } = await registerUser();
+                const { token: staffToken } = await registerUser({ role });
+                const sourceId = (await createWaterSource(ownerToken)).body.data._id;
+
+                const res = await setStatus(staffToken, sourceId, { operational_status: 'Maintenance' });
+
+                expect(res.status).toBe(200);
+                expect(res.body.data.operational_status).toBe('Maintenance');
+            });
+
+            it('TC-WS-027d: should return 404 before checking permissions for a missing source', async () => {
+                const { token } = await registerUser();
+                const res = await setStatus(token, new mongoose.Types.ObjectId().toString(), {
+                    operational_status: 'Broken',
+                });
+
+                expect(res.status).toBe(404);
+            });
+        });
     });
 
     // ─────────────────────────────────────────────────────────────────────────
