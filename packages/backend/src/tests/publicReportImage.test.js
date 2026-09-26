@@ -3,6 +3,7 @@ const app = require('../app');
 const { connect, clearDatabase, closeDatabase } = require('./setup');
 const { PublicReport } = require('../models/PublicReport.model');
 const { User } = require('../models/User.model');
+const { INVALID_IMAGE_MESSAGE } = require('../utils/imageValidation');
 
 // Smallest byte sequences that start with each real file signature.
 const b64 = (...parts) => Buffer.concat(parts).toString('base64');
@@ -95,7 +96,7 @@ describe('Public report photo upload validation', () => {
             const res = await upload([{ imageType: 'water_source', data: HTML, contentType: 'image/png' }]);
 
             expect(res.status).toBe(400);
-            expect(res.body.message).toContain('not a valid image');
+            expect(res.body.message).toBe(INVALID_IMAGE_MESSAGE);
         });
 
         it('should reject real PNG bytes with a mismatching label', async () => {
@@ -117,6 +118,13 @@ describe('Public report photo upload validation', () => {
             expect(res.status).toBe(400);
         });
 
+        it('should show the friendly message for a fake file with a non-image type', async () => {
+            const res = await upload([{ imageType: 'water_source', data: HTML, contentType: 'text/html' }]);
+
+            expect(res.status).toBe(400);
+            expect(res.body.errors[0].message).toBe(INVALID_IMAGE_MESSAGE);
+        });
+
         it('should save nothing when one image in the batch is fake', async () => {
             const res = await upload([
                 { imageType: 'water_source', data: PNG, contentType: 'image/png' },
@@ -125,6 +133,63 @@ describe('Public report photo upload validation', () => {
 
             expect(res.status).toBe(400);
             expect(await storedImages()).toHaveLength(0);
+        });
+    });
+
+    describe('multiple photos', () => {
+        it('should accept several real photos in one request', async () => {
+            const res = await upload([
+                { imageType: 'water_source', data: PNG, contentType: 'image/png', filename: 'well.png' },
+                { imageType: 'water_sample', data: JPEG, contentType: 'image/jpeg', filename: 'sample.jpg' },
+                { imageType: 'other', data: WEBP, contentType: 'image/webp', filename: 'area.webp' },
+            ]);
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.imageCount).toBe(3);
+            expect((await storedImages()).map((i) => i.contentType))
+                .toEqual(['image/png', 'image/jpeg', 'image/webp']);
+        });
+
+        it('should add photos across several uploads', async () => {
+            await upload([{ imageType: 'water_source', data: PNG, contentType: 'image/png' }]).expect(200);
+            const res = await upload([{ imageType: 'water_sample', data: JPEG, contentType: 'image/jpeg' }]);
+
+            expect(res.body.data.imageCount).toBe(2);
+        });
+
+        it('should name every fake photo in the batch and save none of them', async () => {
+            const res = await upload([
+                { imageType: 'water_source', data: PNG, contentType: 'image/png', filename: 'real.png' },
+                { imageType: 'water_sample', data: HTML, contentType: 'image/png', filename: 'fake1.png' },
+                { imageType: 'other', data: HTML, contentType: 'image/jpeg', filename: 'fake2.jpg' },
+            ]);
+
+            expect(res.status).toBe(400);
+            expect(res.body.message).toBe(INVALID_IMAGE_MESSAGE);
+            expect(res.body.errors).toEqual([
+                { field: 'images[1]', filename: 'fake1.png', message: INVALID_IMAGE_MESSAGE },
+                { field: 'images[2]', filename: 'fake2.jpg', message: INVALID_IMAGE_MESSAGE },
+            ]);
+            expect(await storedImages()).toHaveLength(0);
+        });
+
+        it('should label unnamed photos by their position', async () => {
+            const res = await upload([
+                { imageType: 'water_source', data: PNG, contentType: 'image/png' },
+                { imageType: 'water_source', data: HTML, contentType: 'image/png' },
+            ]);
+
+            expect(res.body.errors[0].filename).toBe('Photo 2');
+        });
+
+        it('should not allow more than 10 photos per report across uploads', async () => {
+            const five = Array.from({ length: 5 }, () => ({ imageType: 'other', data: PNG, contentType: 'image/png' }));
+            await upload(five).expect(200);
+            await upload(five).expect(200);
+
+            const res = await upload([{ imageType: 'other', data: PNG, contentType: 'image/png' }]);
+            expect(res.status).toBe(400);
+            expect(res.body.message).toBe('Maximum 10 images per report');
         });
     });
 
@@ -148,7 +213,7 @@ describe('Public report photo upload validation', () => {
             ]);
 
             expect(res.status).toBe(400);
-            expect(JSON.stringify(res.body)).toContain('incomplete');
+            expect(res.body.message).toBe(INVALID_IMAGE_MESSAGE);
         });
 
         it('should reject a JPEG with no closing EOI marker (incomplete)', async () => {
@@ -156,7 +221,7 @@ describe('Public report photo upload validation', () => {
             const res = await upload([{ imageType: 'water_source', contentType: 'image/jpeg', data: truncated }]);
 
             expect(res.status).toBe(400);
-            expect(JSON.stringify(res.body)).toContain('incomplete');
+            expect(res.body.message).toBe(INVALID_IMAGE_MESSAGE);
         });
 
         it('should reject an image whose dimensions are too large', async () => {
@@ -182,7 +247,7 @@ describe('Public report photo upload validation', () => {
             const res = await upload([{ imageType: 'water_source', data: PNG, contentType: 'application/pdf' }]);
 
             expect(res.status).toBe(400);
-            expect(JSON.stringify(res.body)).toContain('Allowed: JPEG, PNG, WebP');
+            expect(res.body.errors[0].message).toBe(INVALID_IMAGE_MESSAGE);
         });
 
         it('should reject an unknown imageType', async () => {

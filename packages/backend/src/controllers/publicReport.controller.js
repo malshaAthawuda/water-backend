@@ -414,27 +414,46 @@ const uploadImages = asyncHandler(async (req, res) => {
         throw ApiError.badRequest('Maximum 10 images per report');
     }
 
-    for (const img of images) {
-        if (!img || !img.data || !img.contentType || !img.imageType) {
-            throw ApiError.badRequest('Each image must have data, contentType, and imageType');
+    // Check every photo before saving any of them, so a batch is all-or-nothing
+    // and the user is told exactly which photos were rejected.
+    const accepted = [];
+    const rejected = [];
+
+    images.forEach((img, index) => {
+        const filename = sanitizeFilename(img && img.filename);
+        const label = filename || `Photo ${index + 1}`;
+        try {
+            if (!img || !img.data || !img.contentType || !img.imageType) {
+                throw ApiError.badRequest('Each image must have data, contentType, and imageType');
+            }
+
+            // ~5MB limit per image (base64 inflates ~33%)
+            if (typeof img.data === 'string' && img.data.length > 7 * 1024 * 1024) {
+                throw ApiError.badRequest('Each image must be under 5MB');
+            }
+
+            // Never trust the client's label: check the real bytes are a JPEG/PNG/WebP
+            // and store the type the server detected, not the one the client claimed.
+            const { base64, detectedType } = decodeAndValidateImage(img.data, img.contentType);
+
+            accepted.push({
+                imageType: img.imageType,
+                data: base64,
+                contentType: detectedType,
+                filename,
+            });
+        } catch (err) {
+            if (!(err instanceof ApiError)) throw err;
+            rejected.push({ field: `images[${index}]`, filename: label, message: err.message });
         }
+    });
 
-        // ~5MB limit per image (base64 inflates ~33%)
-        if (typeof img.data === 'string' && img.data.length > 7 * 1024 * 1024) {
-            throw ApiError.badRequest('Each image must be under 5MB');
-        }
-
-        // Never trust the client's label: check the real bytes are a JPEG/PNG/WebP
-        // and store the type the server detected, not the one the client claimed.
-        const { base64, detectedType } = decodeAndValidateImage(img.data, img.contentType);
-
-        report.images.push({
-            imageType: img.imageType,
-            data: base64,
-            contentType: detectedType,
-            filename: sanitizeFilename(img.filename),
-        });
+    if (rejected.length > 0) {
+        // Lead with the first problem; list every rejected photo in errors[]
+        throw ApiError.badRequest(rejected[0].message, rejected);
     }
+
+    report.images.push(...accepted);
 
     await report.save();
 

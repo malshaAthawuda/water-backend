@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { INVALID_IMAGE_MESSAGE } = require('../utils/imageValidation');
 
 /**
  * Sri Lankan NIC pattern:
@@ -145,7 +146,7 @@ const imageUploadSchema = Joi.object({
                     .valid('image/jpeg', 'image/jpg', 'image/png', 'image/webp')
                     .required()
                     .messages({
-                        'any.only': 'Unsupported image type. Allowed: JPEG, PNG, WebP',
+                        'any.only': INVALID_IMAGE_MESSAGE,
                     }),
                 // ~5MB per image once base64-encoded (base64 inflates ~33%).
                 data: Joi.string()
