@@ -4,6 +4,7 @@ const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
+const { containsFilter } = require('../utils/safeSearch');
 
 /**
  * Create a new laboratory
@@ -58,10 +59,11 @@ const getAllLaboratories = asyncHandler(async (req, res) => {
   }
 
   if (search) {
+    const match = containsFilter(search, 'search');
     filter.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { location: { $regex: search, $options: 'i' } },
-      { city: { $regex: search, $options: 'i' } },
+      { name: match },
+      { location: match },
+      { city: match },
     ];
   }
 
