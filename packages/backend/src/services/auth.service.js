@@ -159,6 +159,16 @@ const login = async (email, password) => {
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
 
+    return startSession(user, 'password');
+};
+
+/**
+ * Finish a successful authentication (password or OAuth): record the login,
+ * issue the application JWT and build the response payload.
+ * @param {Object} user - User document loaded with +tokenVersion
+ * @param {string} method - 'password' | 'discord' (for the audit log)
+ */
+const startSession = async (user, method) => {
     // Update last login time
     user.lastLoginAt = new Date();
     await user.save({ validateBeforeSave: false });
@@ -168,7 +178,7 @@ const login = async (email, password) => {
     // Generate token
     const token = generateToken(user);
 
-    logger.info(`User logged in: ${email}`);
+    logger.info(`User logged in (${method}): ${user.email}`);
 
     // If user is moderator or admin, log their login action
     if (['MODERATOR', 'ADMIN'].includes(user.role)) {
@@ -185,6 +195,10 @@ const login = async (email, password) => {
             email: user.email,
             role: user.role,
             lastLoginAt: user.lastLoginAt,
+            discord: {
+                linked: Boolean(user.discordId),
+                username: user.discordUsername || null,
+            },
         },
         token,
     };
@@ -206,5 +220,6 @@ module.exports = {
     verifyToken,
     register,
     login,
+    startSession,
     getUserById,
 };

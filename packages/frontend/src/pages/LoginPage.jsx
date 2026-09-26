@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, API_BASE_URL } from '../context/AuthContext';
 import {
-    Box, Card, TextField, Button, Typography, Alert, InputAdornment, IconButton,
+    Box, Card, TextField, Button, Typography, Alert, InputAdornment, IconButton, Divider,
 } from '@mui/material';
 import {
-    Visibility, VisibilityOff, WaterDrop as WaterDropIcon, LockOutlined,
+    Visibility, VisibilityOff, WaterDrop as WaterDropIcon, LockOutlined, ForumRounded,
 } from '@mui/icons-material';
 
 export default function LoginPage() {
@@ -126,6 +126,25 @@ export default function LoginPage() {
                         {loading ? 'Signing in...' : 'Sign In'}
                     </Button>
                 </form>
+
+                <Divider sx={{ my: 3, color: 'text.disabled', fontSize: '0.8rem' }}>or</Divider>
+
+                <Button
+                    fullWidth
+                    variant="contained"
+                    size="large"
+                    startIcon={<ForumRounded />}
+                    disabled={loading}
+                    onClick={() => { window.location.href = `${API_BASE_URL}/auth/discord`; }}
+                    sx={{
+                        py: 1.5,
+                        fontSize: '1rem',
+                        bgcolor: '#5865F2',
+                        '&:hover': { bgcolor: '#4752C4' },
+                    }}
+                >
+                    Continue with Discord
+                </Button>
 
                 <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', mt: 3, color: 'text.disabled' }}>
                     Users, moderators, admins, and lab staff can access their role dashboard.

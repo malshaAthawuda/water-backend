@@ -44,6 +44,10 @@ const getMe = asyncHandler(async (req, res) => {
         isEmailVerified: req.user.isEmailVerified,
         createdAt: req.user.createdAt,
         lastLoginAt: req.user.lastLoginAt,
+        discord: {
+            linked: Boolean(req.user.discordId),
+            username: req.user.discordUsername || null,
+        },
     };
 
     return ApiResponse.success(res, { user }, 'Profile retrieved successfully');

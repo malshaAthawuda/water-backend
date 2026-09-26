@@ -12,8 +12,8 @@ Most testing suites (Integration, E2E, and Load Tests) require your core backend
 Ensure your local backend environment variables are established before booting the application. Create a `.env` file within `packages/backend/.env`:
 \`\`\`properties
 # Example /packages/backend/.env
-JWT_SECRET=super_secret_local_key
-JWT_EXPIRES_IN=7d
+JWT_SECRET=<generate-a-long-random-secret>
+JWT_EXPIRES_IN=1d
 RATE_LIMIT_MAX_REQUESTS=300
 \`\`\`
 

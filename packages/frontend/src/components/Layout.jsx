@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, api, API_BASE_URL } from '../context/AuthContext';
 import {
     AppBar, Box, CssBaseline, Divider, Drawer, IconButton,
     List, ListItem, ListItemButton, ListItemIcon, ListItemText,
@@ -12,6 +12,7 @@ import {
     Gavel as GavelIcon,
     ListAlt as ListAltIcon,
     ExitToApp as LogoutIcon,
+    ForumRounded as DiscordIcon,
     Science as ScienceIcon,
     WaterDrop as WaterDropIcon,
     BiotechOutlined as BiotechIcon,
@@ -70,7 +71,8 @@ const Layout = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    const { user, logout } = useAuth();
+    const { user, logout, refreshUser } = useAuth();
+    const [discordBusy, setDiscordBusy] = useState(false);
     const pageMeta = pageMetaByRole(user?.role, location.pathname);
 
     const handleDrawerToggle = () => {
@@ -80,6 +82,26 @@ const Layout = () => {
     const handleLogout = () => {
         logout();
         navigate('/login', { replace: true });
+    };
+
+    // Link: get a short-lived ticket with our Bearer token, then navigate the
+    // browser to the backend, which redirects to Discord's consent screen.
+    const handleDiscordToggle = async () => {
+        setDiscordBusy(true);
+        try {
+            if (user?.discord?.linked) {
+                if (!window.confirm('Unlink your Discord account?')) return;
+                await api.delete('/auth/discord/link');
+                await refreshUser();
+            } else {
+                const { data } = await api.post('/auth/discord/link');
+                window.location.href = `${API_BASE_URL}${data.data.path}`;
+            }
+        } catch (err) {
+            window.alert(err.response?.data?.message || 'Discord request failed. Please try again.');
+        } finally {
+            setDiscordBusy(false);
+        }
     };
 
     // Role-based menu items
@@ -231,6 +253,40 @@ const Layout = () => {
 
             <Box sx={{ mt: 'auto', px: 1.5, pb: 1.5, pt: 1, borderTop: '1px solid #E6EEF8' }}>
                 <List sx={{ p: 0 }}>
+                    <ListItem disablePadding sx={{ mb: 0.5 }}>
+                        <ListItemButton
+                            onClick={handleDiscordToggle}
+                            disabled={discordBusy}
+                            sx={{
+                                borderRadius: 2,
+                                minHeight: 44,
+                                color: '#4752C4',
+                                '&:hover': { bgcolor: '#EEF0FE' },
+                                '& .MuiListItemIcon-root': { minWidth: 36, color: '#5865F2' },
+                                '& .MuiListItemText-primary': { fontWeight: 600, fontSize: '0.92rem' },
+                            }}
+                        >
+                            <ListItemIcon>
+                                <Box
+                                    sx={{
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: '9px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        bgcolor: '#EEF0FE',
+                                    }}
+                                >
+                                    <DiscordIcon />
+                                </Box>
+                            </ListItemIcon>
+                            <ListItemText
+                                primary={user?.discord?.linked ? 'Unlink Discord' : 'Connect Discord'}
+                                secondary={user?.discord?.linked ? `@${user.discord.username}` : null}
+                            />
+                        </ListItemButton>
+                    </ListItem>
                     <ListItem disablePadding>
                         <ListItemButton
                             onClick={handleLogout}

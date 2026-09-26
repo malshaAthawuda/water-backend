@@ -9,7 +9,8 @@ const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
   
   mongoose: {
-    url: process.env.MONGODB_URI || 'mongodb://REDACTED',
+    // No default: database credentials must come from the environment, never source code
+    url: process.env.MONGODB_URI,
     options: {
       // Mongoose 6+ doesn't need these options, but kept for compatibility
     },
@@ -21,6 +22,19 @@ const config = {
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   },
   
+  // OAuth 2.0 (Authorization Code grant) with Discord as the identity provider
+  discord: {
+    clientId: process.env.DISCORD_CLIENT_ID,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    // Must exactly match a redirect registered in the Discord developer portal.
+    // In development the Vite dev server proxies /api to the backend.
+    redirectUri: process.env.DISCORD_REDIRECT_URI || 'http://localhost:5173/api/v1/auth/discord/callback',
+    scopes: ['identify', 'email'],
+  },
+
+  // Where the SPA lives; OAuth callbacks redirect the browser back here
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+
   weather: {
     apiKey: process.env.OPENWEATHER_API_KEY,
   },

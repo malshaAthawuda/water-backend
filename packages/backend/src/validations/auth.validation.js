@@ -67,7 +67,21 @@ const loginSchema = Joi.object({
         }),
 });
 
+/**
+ * Discord OAuth login ticket exchange schema
+ */
+const oauthTicketSchema = Joi.object({
+    ticket: Joi.string()
+        .trim()
+        .max(128)
+        .required()
+        .messages({
+            'any.required': 'Login ticket is required',
+        }),
+});
+
 module.exports = {
     registerSchema,
     loginSchema,
+    oauthTicketSchema,
 };

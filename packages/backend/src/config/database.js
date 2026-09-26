@@ -3,6 +3,11 @@ const config = require('./index');
 const logger = require('../utils/logger');
 
 const connectDB = async () => {
+    if (!config.mongoose.url) {
+        logger.error('MONGODB_URI is not set. Add it to packages/backend/.env (see README).');
+        process.exit(1);
+    }
+
     try {
         const conn = await mongoose.connect(config.mongoose.url, config.mongoose.options);
 

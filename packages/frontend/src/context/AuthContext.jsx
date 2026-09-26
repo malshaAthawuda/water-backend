@@ -100,6 +100,38 @@ export function AuthProvider({ children }) {
         }
     }, []);
 
+    // Store a successful authentication result ({ token, user }) from any login method
+    const storeSession = (newToken, newUser) => {
+        setToken(newToken);
+        setUser(newUser);
+        localStorage.setItem(TOKEN_KEY, newToken);
+        localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+    };
+
+    // Finish "Sign in with Discord": swap the one-time ticket from the OAuth
+    // callback for the API token. The ticket is single-use and expires in 60s.
+    const completeDiscordLogin = useCallback(async (ticket) => {
+        setError(null);
+        try {
+            const { data } = await axios.post(`${API_BASE_URL}/auth/discord/exchange`, { ticket });
+            const { token: newToken, user: newUser } = data.data;
+            storeSession(newToken, newUser);
+            return newUser;
+        } catch (err) {
+            setError(err.response?.data?.message || 'Discord sign-in failed. Please try again.');
+            return null;
+        }
+    }, []);
+
+    // Re-read the profile (e.g. after linking Discord)
+    const refreshUser = useCallback(async () => {
+        const { data } = await api.get('/auth/me');
+        const u = data.data.user;
+        setUser(u);
+        localStorage.setItem(USER_KEY, JSON.stringify(u));
+        return u;
+    }, []);
+
     const logout = useCallback(async () => {
         try {
             if (localStorage.getItem(TOKEN_KEY)) {
@@ -123,6 +155,8 @@ export function AuthProvider({ children }) {
         error,
         isAuthenticated,
         login,
+        completeDiscordLogin,
+        refreshUser,
         logout,
         setError,
         api, // expose the configured axios instance
@@ -142,6 +176,6 @@ export function useAuth() {
 }
 
 // Export the configured axios instance for use outside React
-export { api };
+export { api, API_BASE_URL };
 
 export default AuthContext;
