@@ -1,7 +1,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../app');
-const { connect, clearDatabase, closeDatabase } = require('./setup');
+const { connect, clearDatabase, closeDatabase, promoteUser } = require('./setup');
 const { PublicReport } = require('../models/PublicReport.model');
 const BannedUser = require('../models/BannedUser.model');
 
@@ -13,11 +13,12 @@ const registerUser = async (overrides = {}) => {
         name: overrides.name || 'Admin User',
         email: overrides.email || `admin${userCounter}_${Date.now()}@example.com`,
         password: 'Password123',
-        role: overrides.role || 'ADMIN'
     };
+    const role = overrides.role || 'ADMIN';
     const res = await request(app).post('/api/v1/auth/register').send(userData);
     if (!res.body.data) throw new Error(`Registration failed: ${JSON.stringify(res.body)}`);
-    return { token: res.body.data.token, user: res.body.data.user };
+    await promoteUser(res.body.data.user.id, role);
+    return { token: res.body.data.token, user: { ...res.body.data.user, role } };
 };
 
 describe('Public Report Admin Module', () => {

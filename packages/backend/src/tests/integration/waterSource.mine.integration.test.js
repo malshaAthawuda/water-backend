@@ -12,7 +12,6 @@ const registerUser = async (overrides = {}) => {
         name: overrides.name || `User ${userCounter}`,
         email: overrides.email || `mine_user_${userCounter}_${Date.now()}@example.com`,
         password: 'Password123',
-        ...(overrides.role ? { role: overrides.role } : {}),
     };
 
     const response = await request(app).post('/api/v1/auth/register').send(payload);

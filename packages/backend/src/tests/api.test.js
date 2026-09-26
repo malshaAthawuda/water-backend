@@ -151,13 +151,30 @@ describe('Auth Endpoints', () => {
             expect(res.body.success).toBe(false);
         });
 
-        it('should register user with custom role', async () => {
+        // Finding 2: privilege escalation via self-registration
+        it.each(['ADMIN', 'MODERATOR', 'LAB_STAFF', 'USER'])(
+            'should reject a client-supplied role (%s) during registration',
+            async (role) => {
+                const res = await request(app)
+                    .post('/api/v1/auth/register')
+                    .send({ ...validUser, role })
+                    .expect(400);
+
+                expect(res.body.success).toBe(false);
+                expect(res.body.errors[0].message).toMatch(/Role cannot be set/);
+                expect(await User.findOne({ email: validUser.email })).toBeNull();
+            }
+        );
+
+        it('should always store self-registered accounts as USER', async () => {
             const res = await request(app)
                 .post('/api/v1/auth/register')
-                .send({ ...validUser, role: 'MODERATOR' })
+                .send(validUser)
                 .expect(201);
 
-            expect(res.body.data.user.role).toBe('MODERATOR');
+            expect(res.body.data.user.role).toBe('USER');
+            const stored = await User.findOne({ email: validUser.email });
+            expect(stored.role).toBe('USER');
         });
     });
 
@@ -300,9 +317,10 @@ describe('User Endpoints', () => {
                 name: 'Admin User',
                 email: 'admin@example.com',
                 password: 'Password123',
-                role: 'ADMIN',
             });
         adminToken = adminRes.body.data.token;
+        // Roles cannot be self-assigned at registration; promote directly in the DB
+        await User.updateOne({ email: 'admin@example.com' }, { role: 'ADMIN' });
     });
 
     afterEach(async () => {
@@ -385,9 +403,10 @@ describe('Admin Endpoints', () => {
                 name: 'Admin User',
                 email: 'admin@example.com',
                 password: 'Password123',
-                role: 'ADMIN',
             });
         adminToken = adminRes.body.data.token;
+        // Roles cannot be self-assigned at registration; promote directly in the DB
+        await User.updateOne({ email: 'admin@example.com' }, { role: 'ADMIN' });
     });
 
     afterEach(async () => {

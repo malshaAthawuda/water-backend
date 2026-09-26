@@ -50,8 +50,22 @@ const closeDatabase = async () => {
     }
 };
 
+/**
+ * Grant a privileged role to an existing test user.
+ *
+ * Public registration always creates USER accounts (roles cannot be
+ * self-assigned), so tests that need a MODERATOR / ADMIN / LAB_STAFF
+ * register normally and then promote the account directly in the DB,
+ * mirroring what an administrator would do.
+ */
+const promoteUser = async (userId, role) => {
+    const { User } = require('../models/User.model');
+    await User.updateOne({ _id: userId }, { role });
+};
+
 module.exports = {
     connect,
     clearDatabase,
     closeDatabase,
+    promoteUser,
 };
