@@ -174,9 +174,11 @@ router.patch('/users/:userId/role', authenticate, authorize(UserRole.ADMIN), asy
         throw ApiError.badRequest(`Invalid role. Must be one of: ${Object.values(UserRole).join(', ')}`);
     }
 
+    // Changing a role also revokes the user's existing sessions, so nobody keeps
+    // using a token that was issued under their previous privilege level.
     const user = await User.findByIdAndUpdate(
         userId,
-        { role },
+        { role, $inc: { tokenVersion: 1 } },
         { new: true, runValidators: true }
     );
 
@@ -227,9 +229,11 @@ router.patch('/users/:userId/status', authenticate, authorize(UserRole.ADMIN), a
         throw ApiError.badRequest('You cannot deactivate your own account');
     }
 
+    // Deactivation revokes all of the user's existing tokens
+    const update = isActive ? { isActive } : { isActive, $inc: { tokenVersion: 1 } };
     const user = await User.findByIdAndUpdate(
         userId,
-        { isActive },
+        update,
         { new: true, runValidators: true }
     );
 
