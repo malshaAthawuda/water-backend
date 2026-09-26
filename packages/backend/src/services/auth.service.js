@@ -71,14 +71,52 @@ const register = async (userData) => {
 };
 
 /**
+ * Record a failed password attempt and lock the account once the
+ * configured threshold is reached. Uses an atomic $inc so parallel
+ * guessing requests cannot race past the limit.
+ */
+const registerFailedLogin = async (user) => {
+    const updated = await User.findByIdAndUpdate(
+        user._id,
+        { $inc: { failedLoginAttempts: 1 } },
+        { new: true, projection: { failedLoginAttempts: 1, email: 1 } }
+    );
+
+    if (updated && updated.failedLoginAttempts >= config.auth.maxLoginAttempts) {
+        await User.updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    failedLoginAttempts: 0,
+                    lockUntil: new Date(Date.now() + config.auth.lockTimeMs),
+                },
+            }
+        );
+        logger.warn(`Account locked after ${config.auth.maxLoginAttempts} failed logins: ${updated.email}`);
+    }
+};
+
+/**
  * Login user
  */
 const login = async (email, password) => {
     // Find user by email and include password field
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    const user = await User.findOne({ email: email.toLowerCase() })
+        .select('+password +failedLoginAttempts +lockUntil');
 
     if (!user) {
         throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    // Refuse to even check the password while the account is locked, so an
+    // attacker cannot keep guessing during the lockout window.
+    if (user.isLocked()) {
+        const minutesLeft = Math.ceil((user.lockUntil.getTime() - Date.now()) / 60000);
+        logger.warn(`Login attempt on locked account: ${email}`);
+        throw new ApiError(
+            429,
+            `Too many failed login attempts. Account locked, try again in ${minutesLeft} minute(s).`
+        );
     }
 
     // Check if user is active
@@ -89,8 +127,13 @@ const login = async (email, password) => {
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+        await registerFailedLogin(user);
         throw ApiError.unauthorized('Invalid email or password');
     }
+
+    // Successful login clears the failure counter and any expired lock
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
 
     // Update last login time
     user.lastLoginAt = new Date();

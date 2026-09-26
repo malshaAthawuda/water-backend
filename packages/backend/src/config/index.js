@@ -28,6 +28,13 @@ const config = {
     level: process.env.LOG_LEVEL || 'info',
   },
   
+  auth: {
+    // Account lockout: after maxLoginAttempts consecutive wrong passwords the
+    // account is locked for lockTimeMs, regardless of the caller's IP address.
+    maxLoginAttempts: parseInt(process.env.AUTH_MAX_LOGIN_ATTEMPTS, 10) || 5,
+    lockTimeMs: parseInt(process.env.AUTH_LOCK_TIME_MS, 10) || 15 * 60 * 1000, // 15 min
+  },
+
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000, // 5 s
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 300,
