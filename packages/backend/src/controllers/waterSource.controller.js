@@ -293,9 +293,19 @@ const getSourceById = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Only the user who registered a water source, or a moderator/admin, may
+ * change it. Shared by status update, detail update and delete.
+ */
+const canManageSource = (waterSource, user) => {
+    const isCreator = waterSource.created_by.toString() === user._id.toString();
+    const isModerator = user.role === 'MODERATOR' || user.role === 'ADMIN';
+    return isCreator || isModerator;
+};
+
+/**
  * @desc    Update operational status of a water source
  * @route   PATCH /api/v1/water-sources/:id/status
- * @access  Private (Admin or Verified Users)
+ * @access  Private (Creator, Moderator, or Admin)
  *
  * Allows authorized users to update the operational status
  * Example: Marking a well as "Broken" or "Maintenance"
@@ -312,6 +322,15 @@ const updateSourceStatus = asyncHandler(async (req, res) => {
 
     if (!waterSource) {
         throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Water source not found');
+    }
+
+    // Any logged-in user used to be able to flip any source to "Broken" or
+    // "Contaminated", misleading everyone who relies on the public map.
+    if (!canManageSource(waterSource, req.user)) {
+        throw new ApiError(
+            HTTP_STATUS.FORBIDDEN,
+            'You do not have permission to change the status of this water source'
+        );
     }
 
     // Update the operational status
@@ -342,8 +361,6 @@ const updateSourceStatus = asyncHandler(async (req, res) => {
 const updateWaterSource = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
-    const userId = req.user._id;
-    const userRole = req.user.role;
 
     const waterSource = await WaterSource.findOne({
         _id: id,
@@ -355,10 +372,7 @@ const updateWaterSource = asyncHandler(async (req, res) => {
     }
 
     // Check permissions: only creator, moderator, or admin can update
-    const isCreator = waterSource.created_by.toString() === userId.toString();
-    const isModerator = userRole === 'MODERATOR' || userRole === 'ADMIN';
-
-    if (!isCreator && !isModerator) {
+    if (!canManageSource(waterSource, req.user)) {
         throw new ApiError(
             HTTP_STATUS.FORBIDDEN,
             'You do not have permission to update this water source'
@@ -436,7 +450,6 @@ const verifyWaterSource = asyncHandler(async (req, res) => {
 const softDeleteSource = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const userId = req.user._id;
-    const userRole = req.user.role;
 
     const waterSource = await WaterSource.findOne({
         _id: id,
@@ -448,10 +461,7 @@ const softDeleteSource = asyncHandler(async (req, res) => {
     }
 
     // Check permissions: only creator, moderator, or admin can delete
-    const isCreator = waterSource.created_by.toString() === userId.toString();
-    const isModerator = userRole === 'MODERATOR' || userRole === 'ADMIN';
-
-    if (!isCreator && !isModerator) {
+    if (!canManageSource(waterSource, req.user)) {
         throw new ApiError(
             HTTP_STATUS.FORBIDDEN,
             'You do not have permission to delete this water source'
