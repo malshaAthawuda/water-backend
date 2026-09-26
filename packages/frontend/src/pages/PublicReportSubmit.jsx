@@ -12,10 +12,19 @@ import {
     CheckCircle as CheckCircleIcon,
     ContentCopy as ContentCopyIcon,
 } from '@mui/icons-material';
-import { createPublicReport, updatePublicReport, submitPublicReport } from '../services/publicReportService';
+import { createPublicReport, updatePublicReport, submitPublicReport, uploadPublicReportImage } from '../services/publicReportService';
 import { useAuth } from '../context/AuthContext';
 
 const WATER_SOURCES = ['well', 'river', 'lake', 'tap', 'tank', 'canal', 'spring', 'rainwater', 'borehole', 'other'];
+
+// Read a File as a base64 data URL (the backend strips the "data:...;base64," prefix).
+const fileToBase64 = (file) =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read the selected file'));
+        reader.readAsDataURL(file);
+    });
 
 export default function PublicReportSubmit() {
     const navigate = useNavigate();
@@ -37,6 +46,7 @@ export default function PublicReportSubmit() {
     const [appearance, setAppearance] = useState('');
     const [turbidity, setTurbidity] = useState('');
     const [image, setImage] = useState(null);
+    const [imageUploaded, setImageUploaded] = useState(false);
 
     const steps = ['Identity', 'Details', 'Photo (Optional)', 'Review'];
     const isUserPortal = isAuthenticated && user?.role === 'USER';
@@ -74,7 +84,21 @@ export default function PublicReportSubmit() {
                     currentStep: 2
                 });
             } else if (activeStep === 2) {
-                // Step 3: Image (optional — skip if none)
+                // Step 3: Image (optional). Upload to the hardened endpoint, which
+                // rejects anything that is not a genuine JPEG/PNG/WebP.
+                if (image && !imageUploaded) {
+                    const dataUrl = await fileToBase64(image);
+                    await uploadPublicReportImage(reportId, {
+                        images: [
+                            {
+                                imageType: 'water_source',
+                                contentType: image.type || 'application/octet-stream',
+                                data: dataUrl,
+                            },
+                        ],
+                    });
+                    setImageUploaded(true);
+                }
             } else if (activeStep === steps.length - 1) {
                 // Final submit
                 await submitPublicReport(reportId);
@@ -318,10 +342,10 @@ export default function PublicReportSubmit() {
                                         <Typography sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
                                             {image ? image.name : 'Click to select an image (optional)'}
                                         </Typography>
-                                        <input type="file" hidden accept="image/*" onChange={(e) => setImage(e.target.files[0])} />
+                                        <input type="file" hidden accept="image/*" onChange={(e) => { setImage(e.target.files[0]); setImageUploaded(false); setError(null); }} />
                                     </Button>
                                     {image && (
-                                        <Button size="small" color="error" sx={{ mt: 1, textTransform: 'none' }} onClick={() => setImage(null)}>
+                                        <Button size="small" color="error" sx={{ mt: 1, textTransform: 'none' }} onClick={() => { setImage(null); setImageUploaded(false); setError(null); }}>
                                             Remove Image
                                         </Button>
                                     )}

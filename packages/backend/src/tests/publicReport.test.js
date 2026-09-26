@@ -5,9 +5,9 @@ const { connect, clearDatabase, closeDatabase } = require('./setup');
 const { PublicReport } = require('../models/PublicReport.model');
 const BannedUser = require('../models/BannedUser.model');
 
-// Smallest byte sequences that begin with real PNG / JPEG file signatures
-const PNG_B64 = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)]).toString('base64');
-const JPEG_B64 = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16)]).toString('base64');
+// Genuine, complete tiny images (real signatures + closing markers)
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const JPEG_B64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==';
 
 describe('Public Report Module (Wizard)', () => {
 
@@ -150,7 +150,9 @@ describe('Public Report Module (Wizard)', () => {
                 .send({ images: dummyImages });
                 
             expect(res.status).toBe(400);
-            expect(res.body.message).toContain('Maximum 10 images');
+            // The 10-image limit is now enforced by the request-validation schema,
+            // so the detail arrives in the standard "Validation failed" envelope.
+            expect(JSON.stringify(res.body)).toContain('Maximum 10 images');
         });
     });
 

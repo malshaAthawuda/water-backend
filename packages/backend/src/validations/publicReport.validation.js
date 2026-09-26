@@ -125,6 +125,48 @@ const updateReportSchema = Joi.object({
 }).min(1); // at least one field must be provided
 
 /**
+ * Schema: upload images to a report
+ * Validates the request shape early (before the controller). The controller
+ * still verifies the real file bytes; this schema rejects obviously invalid
+ * requests and caps the batch so oversized/spam payloads are stopped up front.
+ */
+const imageUploadSchema = Joi.object({
+    images: Joi.array()
+        .min(1)
+        .max(10)
+        .items(
+            Joi.object({
+                imageType: Joi.string()
+                    .valid('water_source', 'water_sample', 'other')
+                    .required(),
+                // Only real image content types are accepted (image/jpg is a common
+                // alias for image/jpeg). The controller confirms the actual bytes.
+                contentType: Joi.string()
+                    .valid('image/jpeg', 'image/jpg', 'image/png', 'image/webp')
+                    .required()
+                    .messages({
+                        'any.only': 'Unsupported image type. Allowed: JPEG, PNG, WebP',
+                    }),
+                // ~5MB per image once base64-encoded (base64 inflates ~33%).
+                data: Joi.string()
+                    .min(1)
+                    .max(7 * 1024 * 1024)
+                    .required()
+                    .messages({
+                        'string.max': 'Each image must be under 5MB',
+                    }),
+                filename: Joi.string().max(120).allow(null, ''),
+            })
+        )
+        .required()
+        .messages({
+            'array.min': 'Please provide at least one image',
+            'array.max': 'Maximum 10 images per report',
+            'any.required': 'Please provide at least one image',
+        }),
+});
+
+/**
  * Schema: NIC param for lookup
  */
 const nicParamSchema = Joi.object({
@@ -196,6 +238,7 @@ const trackingCodeParamSchema = Joi.object({
 module.exports = {
     createReportSchema,
     updateReportSchema,
+    imageUploadSchema,
     nicParamSchema,
     requestCodeSchema,
     verifyCodeSchema,
