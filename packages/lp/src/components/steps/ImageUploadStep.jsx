@@ -11,20 +11,35 @@ import WaterDropOutlinedIcon from '@mui/icons-material/WaterDropOutlined';
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const INVALID_PHOTO_MESSAGE =
+    'We couldn’t accept that file. Please make sure every photo is a real JPEG, PNG, or WebP image.';
 
-function ImageUploadCard({ title, subtitle, icon, imageType, images, onAdd, onRemove }) {
+// Turn an upload error into a message that names every rejected photo
+const describeUploadError = (err) => {
+    const body = err.response?.data;
+    const rejected = (body?.errors || []).filter((e) => e.filename);
+    if (rejected.length > 0) {
+        return `${rejected[0].message} Not accepted: ${rejected.map((e) => e.filename).join(', ')}`;
+    }
+    return body?.errors?.[0]?.message || body?.message || 'Failed to upload images';
+};
+
+function ImageUploadCard({ title, subtitle, icon, imageType, images, onAdd, onRemove, onError }) {
     const fileInputRef = useRef(null);
     const existing = images.filter(img => img.imageType === imageType);
 
     const handleFileSelect = async (e) => {
         const files = Array.from(e.target.files);
+        const notImages = [];
+        const tooLarge = [];
         for (const file of files) {
-            if (file.size > MAX_FILE_SIZE) {
-                alert(`${file.name} is too large. Maximum size is 5MB.`);
+            if (!ALLOWED_TYPES.includes(file.type)) {
+                notImages.push(file.name);
                 continue;
             }
-            if (!file.type.startsWith('image/')) {
-                alert(`${file.name} is not an image file.`);
+            if (file.size > MAX_FILE_SIZE) {
+                tooLarge.push(file.name);
                 continue;
             }
             const base64 = await fileToBase64(file);
@@ -34,6 +49,11 @@ function ImageUploadCard({ title, subtitle, icon, imageType, images, onAdd, onRe
                 contentType: file.type,
                 filename: file.name,
             });
+        }
+        if (notImages.length > 0) {
+            onError(`${INVALID_PHOTO_MESSAGE} Not accepted: ${notImages.join(', ')}`);
+        } else if (tooLarge.length > 0) {
+            onError(`Each photo must be under 5MB. Not accepted: ${tooLarge.join(', ')}`);
         }
         e.target.value = '';
     };
@@ -80,7 +100,7 @@ function ImageUploadCard({ title, subtitle, icon, imageType, images, onAdd, onRe
             <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={ALLOWED_TYPES.join(',')}
                 multiple
                 hidden
                 onChange={handleFileSelect}
@@ -136,7 +156,7 @@ export default function ImageUploadStep({ onNext, onBack, stepNumber }) {
             try {
                 await reportApi.uploadImages(reportId, images);
             } catch (err) {
-                setError(err.response?.data?.message || 'Failed to upload images');
+                setError(describeUploadError(err));
                 setUploading(false);
                 return;
             }
@@ -164,6 +184,7 @@ export default function ImageUploadStep({ onNext, onBack, stepNumber }) {
                 images={images}
                 onAdd={handleAdd}
                 onRemove={handleRemove}
+                onError={setError}
             />
 
             <ImageUploadCard
@@ -174,6 +195,7 @@ export default function ImageUploadStep({ onNext, onBack, stepNumber }) {
                 images={images}
                 onAdd={handleAdd}
                 onRemove={handleRemove}
+                onError={setError}
             />
 
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3, textAlign: 'center' }}>
