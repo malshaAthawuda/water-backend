@@ -36,11 +36,13 @@ const registerSchema = Joi.object({
             'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number',
             'any.required': 'Password is required',
         }),
-    role: Joi.string()
-        .valid('USER', 'MODERATOR', 'ADMIN', 'LAB_STAFF')
-        .default('USER')
+    // Roles are never accepted from the client. Every self-registered account
+    // is a USER; privileged roles are granted only by an ADMIN through
+    // PATCH /admin/users/:userId/role (or the create-admin bootstrap script).
+    role: Joi.any()
+        .forbidden()
         .messages({
-            'any.only': 'Role must be one of: USER, MODERATOR, ADMIN, LAB_STAFF',
+            'any.unknown': 'Role cannot be set during registration',
         }),
 });
 
