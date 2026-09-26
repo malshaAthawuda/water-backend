@@ -35,6 +35,12 @@ const config = {
     lockTimeMs: parseInt(process.env.AUTH_LOCK_TIME_MS, 10) || 15 * 60 * 1000, // 15 min
   },
 
+  // Stricter per-IP limit for /auth/login and /auth/register (failed requests only)
+  authRateLimit: {
+    windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 min
+    max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 10,
+  },
+
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000, // 5 s
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 300,
