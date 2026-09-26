@@ -9,7 +9,8 @@ const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
   
   mongoose: {
-    url: process.env.MONGODB_URI || 'mongodb://REDACTED',
+    // No default: database credentials must come from the environment, never source code
+    url: process.env.MONGODB_URI,
     options: {
       // Mongoose 6+ doesn't need these options, but kept for compatibility
     },
