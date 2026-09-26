@@ -33,7 +33,8 @@ const userSchema = new mongoose.Schema(
         },
         password: {
             type: String,
-            required: [true, 'Password is required'],
+            // Accounts created through "Sign in with Discord" have no local password
+            required: [function () { return !this.discordId; }, 'Password is required'],
             minlength: [8, 'Password must be at least 8 characters'],
             select: false, // Don't include password in queries by default
         },
@@ -45,6 +46,16 @@ const userSchema = new mongoose.Schema(
         isActive: {
             type: Boolean,
             default: true,
+        },
+        // Linked Discord identity (OAuth 2.0). The Discord user id is the stable
+        // identifier; the username is only kept for display.
+        discordId: {
+            type: String,
+            unique: true,
+            sparse: true,
+        },
+        discordUsername: {
+            type: String,
         },
         isEmailVerified: {
             type: Boolean,
@@ -121,6 +132,8 @@ userSchema.pre('save', async function () {
  * Instance method to compare passwords
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
+    // Discord-only accounts have no password and can never log in with one
+    if (!this.password) return false;
     return bcrypt.compare(candidatePassword, this.password);
 };
 
