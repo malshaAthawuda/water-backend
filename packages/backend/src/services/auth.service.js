@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const config = require('../config');
 const { User, UserRole } = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
@@ -71,6 +72,19 @@ const register = async (userData) => {
 };
 
 /**
+ * bcrypt hash used to burn the same amount of CPU time when the email does
+ * not exist, so response timing does not reveal which emails are registered.
+ * Cost factor matches the real password hashes (see User.model pre-save).
+ */
+let dummyPasswordHash;
+const getDummyPasswordHash = async () => {
+    if (!dummyPasswordHash) {
+        dummyPasswordHash = await bcrypt.hash('dummy-password-for-timing-equalisation', 12);
+    }
+    return dummyPasswordHash;
+};
+
+/**
  * Record a failed password attempt and lock the account once the
  * configured threshold is reached. Uses an atomic $inc so parallel
  * guessing requests cannot race past the limit.
@@ -105,6 +119,7 @@ const login = async (email, password) => {
         .select('+password +failedLoginAttempts +lockUntil');
 
     if (!user) {
+        await bcrypt.compare(password, await getDummyPasswordHash());
         throw ApiError.unauthorized('Invalid email or password');
     }
 
@@ -119,16 +134,16 @@ const login = async (email, password) => {
         );
     }
 
-    // Check if user is active
-    if (!user.isActive) {
-        throw ApiError.unauthorized('Account is deactivated. Please contact support.');
-    }
-
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
         await registerFailedLogin(user);
         throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    // Only reveal the deactivated state to someone who knows the password
+    if (!user.isActive) {
+        throw ApiError.unauthorized('Account is deactivated. Please contact support.');
     }
 
     // Successful login clears the failure counter and any expired lock
