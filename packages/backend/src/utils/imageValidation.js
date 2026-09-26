@@ -4,6 +4,11 @@ const ApiError = require('./ApiError');
 // Only these picture formats are accepted for report photos.
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
+// Shown to the user whenever an upload is not a genuine picture (e.g. a text or
+// script file renamed to .jpg, or a truncated/forged image).
+const INVALID_IMAGE_MESSAGE =
+    'We couldn’t accept that file. Please make sure every photo is a real JPEG, PNG, or WebP image.';
+
 // Reject absurdly large images (decompression-bomb / resource protection).
 const MAX_IMAGE_DIMENSION = 12000; // pixels, per side
 
@@ -121,7 +126,7 @@ const decodeAndValidateImage = (data, claimedType) => {
 
     const detectedType = detectImageType(buffer);
     if (!detectedType) {
-        throw ApiError.badRequest('File is not a valid image. Allowed types: JPEG, PNG, WebP');
+        throw ApiError.badRequest(INVALID_IMAGE_MESSAGE);
     }
 
     const claimed = String(claimedType || '').toLowerCase() === 'image/jpg'
@@ -132,7 +137,7 @@ const decodeAndValidateImage = (data, claimedType) => {
     }
 
     if (!isCompleteImage(buffer, detectedType)) {
-        throw ApiError.badRequest('Image file appears to be incomplete or corrupted');
+        throw ApiError.badRequest(INVALID_IMAGE_MESSAGE);
     }
 
     const dims = getImageDimensions(buffer, detectedType);
@@ -153,6 +158,7 @@ const sanitizeFilename = (name) => {
 
 module.exports = {
     ALLOWED_IMAGE_TYPES,
+    INVALID_IMAGE_MESSAGE,
     MAX_IMAGE_DIMENSION,
     detectImageType,
     isCompleteImage,
