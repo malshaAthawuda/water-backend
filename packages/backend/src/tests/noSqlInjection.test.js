@@ -13,6 +13,7 @@ const { findOperatorKey } = require('../middlewares/noSqlInjection.middleware');
  */
 describe('NoSQL injection protection', () => {
     let adminToken;
+    let adminId;
 
     const lab = (overrides) => ({
         location: 'Loc', email: `${overrides.name.replace(/\W/g, '')}@lab.com`, phone: '0112233441',
@@ -28,7 +29,8 @@ describe('NoSQL injection protection', () => {
         const res = await request(app).post('/api/v1/auth/register').send({
             name: 'Admin', email: 'admin@example.com', password: 'Password123',
         });
-        await promoteUser(res.body.data.user.id, 'ADMIN');
+        adminId = res.body.data.user.id;
+        await promoteUser(adminId, 'ADMIN');
         adminToken = res.body.data.token;
     });
 
@@ -116,7 +118,7 @@ describe('NoSQL injection protection', () => {
         });
 
         it('rejects {"$ne": null} on unban and keeps the existing ban', async () => {
-            await BannedUser.create({ type: 'nic', value: '111222333V', reason: 'spam' });
+            await BannedUser.create({ type: 'nic', value: '111222333V', reason: 'spam', bannedBy: adminId });
 
             const res = await request(app)
                 .post('/api/v1/public-reports-admin/unban')
