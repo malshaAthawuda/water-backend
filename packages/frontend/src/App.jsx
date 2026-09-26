@@ -7,6 +7,7 @@ import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import OAuthCallback from './pages/OAuthCallback';
 import PublicReportSubmit from './pages/PublicReportSubmit';
 import PublicMap from './pages/PublicMap';
 import PublicReportTracker from './pages/PublicReportTracker';
@@ -49,6 +50,7 @@ function App() {
             {/* Public — Authentication & Registration */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
             
             {/* Public — Report Submission */}
             <Route path="/report" element={<PublicReportSubmit />} />
