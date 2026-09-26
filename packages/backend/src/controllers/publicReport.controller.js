@@ -8,6 +8,7 @@ const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const BannedUser = require('../models/BannedUser.model');
 const { decodeAndValidateImage, sanitizeFilename } = require('../utils/imageValidation');
+const { sendTrackingOtpEmail } = require('../services/email.service');
 
 /**
  * Generate a citizen-friendly random tracking code (e.g. WR-A1B2-C3D4)
@@ -71,7 +72,7 @@ function verifyReportAccess(req, report) {
  * @access  Public
  */
 const createReport = asyncHandler(async (req, res) => {
-    const { nic } = req.body;
+    const { nic, email } = req.body;
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
 
     // Check if user is banned
@@ -91,6 +92,7 @@ const createReport = asyncHandler(async (req, res) => {
 
     const report = await PublicReport.create({
         nic,
+        email: email ? email.toLowerCase().trim() : null,
         ipAddress,
         trackingCode,
         accessToken,
@@ -274,37 +276,68 @@ const trackByCode = asyncHandler(async (req, res) => {
  */
 const requestTrackingCode = asyncHandler(async (req, res) => {
     const { nic, email } = req.body;
+    const normalizedNic = nic.trim();
+    const normalizedEmail = email.toLowerCase().trim();
 
+    // Search by NIC only — email is stored on the report from the submission wizard
+    // (Searching NIC + email would always fail because email was historically null)
     const reports = await PublicReport.find({
-        nic: nic.trim(),
-        email: email.toLowerCase().trim(),
+        nic: normalizedNic,
+        email: normalizedEmail,
     }).select('+trackingOtp +trackingOtpExpires');
 
-    // To prevent account/NIC enumeration, return generic success even if no reports exist
-    if (!reports || reports.length === 0) {
-        return ApiResponse.success(
-            res,
-            null,
-            'If matching reports are found, a verification code has been sent to your email.'
-        );
+    // If not found by NIC+email, also try NIC only (to handle reports missing email)
+    let matchedReports = reports;
+    if (!matchedReports || matchedReports.length === 0) {
+        const byNicOnly = await PublicReport.find({
+            nic: normalizedNic,
+            $or: [{ email: null }, { email: normalizedEmail }],
+        }).select('+trackingOtp +trackingOtpExpires');
+
+        if (!byNicOnly || byNicOnly.length === 0) {
+            // To prevent account/NIC enumeration, always return a generic success
+            return ApiResponse.success(
+                res,
+                null,
+                'If matching reports are found, a verification code has been sent to your email.'
+            );
+        }
+        matchedReports = byNicOnly;
     }
 
     // Generate 6-digit cryptographic OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    for (const r of reports) {
+    // Save OTP to all matching reports and ensure email is persisted
+    for (const r of matchedReports) {
         r.trackingOtp = otp;
         r.trackingOtpExpires = expires;
+        if (!r.email) r.email = normalizedEmail; // Back-fill missing email
         await r.save();
     }
 
-    logger.info(`[SECURITY] Generated tracking OTP for NIC ${nic} (${email}): ${otp}`);
+    logger.info(`[SECURITY] Generated tracking OTP for NIC ${normalizedNic} (${normalizedEmail}): ${otp}`);
+
+    // Attempt to send real email via SMTP
+    const emailResult = await sendTrackingOtpEmail({
+        to: normalizedEmail,
+        otp,
+        nic: normalizedNic,
+    });
+
+    if (emailResult.sent) {
+        logger.info(`[EMAIL] OTP email dispatched to ${normalizedEmail}`);
+    } else {
+        logger.warn(`[EMAIL] Could not send OTP email to ${normalizedEmail}: ${emailResult.error}. OTP logged server-side.`);
+    }
 
     return ApiResponse.success(
         res,
         {
-            ...(config.env !== 'production' ? { debugOtp: otp } : {})
+            // Always expose OTP in dev mode (email may not be configured in dev)
+            ...(config.env !== 'production' ? { debugOtp: otp } : {}),
+            emailSent: emailResult.sent,
         },
         'A 6-digit verification code has been sent to your email. It will expire in 10 minutes.'
     );

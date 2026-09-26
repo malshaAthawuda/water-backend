@@ -31,6 +31,7 @@ export default function PublicReportSubmit() {
 
     // Form states
     const [nic, setNic] = useState('');
+    const [email, setEmail] = useState('');
     const [waterSource, setWaterSource] = useState('');
     const [location, setLocation] = useState({ district: '', city: '', address: '' });
     const [appearance, setAppearance] = useState('');
@@ -54,7 +55,10 @@ export default function PublicReportSubmit() {
             if (activeStep === 0) {
                 // Step 1: Create wizard
                 if (!nic.trim()) throw new Error('NIC is required');
-                const { report, trackingCode: tc, accessToken: at } = await createPublicReport(nic.trim());
+                if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+                    throw new Error('A valid email address is required for tracking your report');
+                }
+                const { report, trackingCode: tc, accessToken: at } = await createPublicReport(nic.trim(), email.trim().toLowerCase());
                 setReportId(report._id);
                 setTrackingCode(tc);
                 setAccessToken(at);
@@ -222,19 +226,32 @@ export default function PublicReportSubmit() {
                         <Box sx={{ minHeight: 250 }}>
                             {/* Step 0: Identity */}
                             {activeStep === 0 && (
-                                <Box sx={{ maxWidth: 400, mx: 'auto', textAlign: 'center' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Provide Your NIC</Typography>
+                                <Box sx={{ maxWidth: 450, mx: 'auto', textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Provide Your Identity</Typography>
                                     <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-                                        Your NIC is used to associate this report. It will <strong>never be publicly visible</strong>.
+                                        Your NIC and email are used to link this report to you. They will <strong>never be publicly visible</strong>.
+                                        Your email is used to send you a tracking code for future lookups.
                                     </Typography>
-                                    <TextField
-                                        fullWidth
-                                        label="NIC Number"
-                                        placeholder="e.g. 901234567V or 200012345678"
-                                        value={nic}
-                                        onChange={(e) => setNic(e.target.value)}
-                                        required
-                                    />
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <TextField
+                                            fullWidth
+                                            label="NIC Number"
+                                            placeholder="e.g. 901234567V or 200012345678"
+                                            value={nic}
+                                            onChange={(e) => setNic(e.target.value)}
+                                            required
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            label="Email Address *"
+                                            type="email"
+                                            placeholder="e.g. yourname@gmail.com"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            required
+                                            helperText="You'll need this email + NIC to track your report later"
+                                        />
+                                    </Box>
                                 </Box>
                             )}
 
