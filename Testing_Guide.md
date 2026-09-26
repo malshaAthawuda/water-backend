@@ -13,7 +13,7 @@ Ensure your local backend environment variables are established before booting t
 \`\`\`properties
 # Example /packages/backend/.env
 JWT_SECRET=super_secret_local_key
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=1d
 RATE_LIMIT_MAX_REQUESTS=300
 \`\`\`
 

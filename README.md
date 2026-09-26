@@ -61,10 +61,24 @@ Full project documentation and requirements are available on Trello:
    PORT=3000
    MONGODB_URI=mongodb://localhost:27017/water_quality_db
    JWT_SECRET=your-super-secret-key
-   JWT_EXPIRES_IN=7d
+   JWT_EXPIRES_IN=1d
+
+   # Optional: Sign in with Discord (see "Sign in with Discord" below)
+   DISCORD_CLIENT_ID=
+   DISCORD_CLIENT_SECRET=
+   DISCORD_REDIRECT_URI=http://localhost:5173/api/v1/auth/discord/callback
+   FRONTEND_URL=http://localhost:5173
    ```
 
-4. **Start the server**
+4. **Create the first administrator**
+
+   Public registration always creates `USER` accounts, so bootstrap an admin from the server:
+   ```bash
+   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='Str0ngPassw0rd' \
+     npm run create-admin --workspace=@water-backend/backend
+   ```
+
+5. **Start the server**
    ```bash
    # Development (with hot reload)
    npm run dev
@@ -73,7 +87,7 @@ Full project documentation and requirements are available on Trello:
    npm start
    ```
 
-5. **Verify installation**
+6. **Verify installation**
    ```bash
    curl http://localhost:3000/api/v1/health
    ```
@@ -214,6 +228,9 @@ water-backend/
 | `LAB_STAFF` | Laboratory staff - manage test requests, input results, issue verdicts |
 | `ADMIN` | Full access to all endpoints |
 
+Every self-registered account (password or Discord) is a `USER`. Other roles are granted by an
+admin via `PATCH /api/v1/admin/users/:userId/role`, or with `npm run create-admin` for the first admin.
+
 ---
 
 ## 📜 Scripts
@@ -222,6 +239,7 @@ water-backend/
 |--------|-------------|
 | `npm start` | Start production server |
 | `npm run dev` | Start development server with hot reload |
+| `npm run create-admin` | Create or promote an ADMIN (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`) |
 | `npm test` | Run test suite |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:coverage` | Run tests with coverage report |
@@ -306,6 +324,9 @@ Backend (`packages/backend`):
 - `LOG_LEVEL`
 - `RATE_LIMIT_WINDOW_MS`
 - `RATE_LIMIT_MAX_REQUESTS`
+- `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX` (failed login/register attempts per IP)
+- `AUTH_MAX_LOGIN_ATTEMPTS`, `AUTH_LOCK_TIME_MS` (per-account lockout)
+- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `FRONTEND_URL`
 - `Google_Map_apiKey`
 
 Frontend (`packages/frontend`):
@@ -328,13 +349,71 @@ Frontend (`packages/frontend`):
 ![alt text](image-1.png)
 ---
 
+## 🔑 Sign in with Discord (OAuth 2.0)
+
+Users can sign in or sign up with Discord, and existing users can link Discord to their account
+from the dashboard sidebar ("Connect Discord"). It uses the OAuth 2.0 **Authorization Code grant**
+with the backend as a confidential client.
+
+### Setup
+
+1. Create an application at <https://discord.com/developers/applications>.
+2. Under **OAuth2 → Redirects**, add `http://localhost:5173/api/v1/auth/discord/callback`
+   (the Vite dev server proxies `/api` to the backend). For production use
+   `https://<backend-host>/api/v1/auth/discord/callback`.
+3. Copy the **Client ID** and **Client Secret** into `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`,
+   set `DISCORD_REDIRECT_URI` to the redirect above and `FRONTEND_URL` to the SPA origin.
+
+### Flow
+
+```
+Browser                         Backend                                Discord
+  | GET /auth/discord              |                                      |
+  |------------------------------->| state = random(256 bit)              |
+  |                                | store sha256(state), TTL 10 min      |
+  |<-- 302 + Set-Cookie state -----|                                      |
+  |---------------- authorize?response_type=code&state=... -------------->|
+  |<--------------- 302 /auth/discord/callback?code&state ----------------|
+  |------------------------------->| state == cookie == DB record (1 use) |
+  |                                |-- POST /oauth2/token (code+secret) ->|
+  |                                |-- GET /users/@me ------------------->|
+  |                                |-- POST /oauth2/token/revoke -------->|
+  |                                | find/create USER, one-time ticket    |
+  |<-- 302 FRONTEND/oauth/callback#ticket=... (60 s, single use)          |
+  | POST /auth/discord/exchange {ticket} -> { token, user }               |
+```
+
+Security properties:
+
+- `state` is bound to the browser with an `HttpOnly`, `SameSite=Lax` cookie and is single-use (login CSRF protection).
+- The client secret never leaves the server; scopes are limited to `identify email`.
+- The Discord access token is revoked right after reading the profile.
+- The app JWT never appears in a URL; the browser gets a 60-second single-use ticket in the URL fragment.
+- New Discord users need a Discord-verified email and are always `USER`.
+- Discord sign-in never auto-merges into an existing password account with the same email
+  (prevents pre-account takeover). Those users sign in with their password and link Discord explicitly.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/auth/discord` | Start sign-in (or link flow with `?link_ticket=`) |
+| `GET /api/v1/auth/discord/callback` | OAuth redirect URI |
+| `POST /api/v1/auth/discord/exchange` | Swap the one-time ticket for a JWT |
+| `POST /api/v1/auth/discord/link` | (auth) Get a link ticket |
+| `DELETE /api/v1/auth/discord/link` | (auth) Unlink Discord |
+
+---
+
 ## 🛡️ Security Features
 
 - **Helmet** - Secure HTTP headers
 - **CORS** - Cross-origin resource sharing
-- **Rate Limiting** - 100 requests per 15 minutes
+- **Rate Limiting** - global API limit plus a strict per-IP limit on failed login/register attempts
+- **Account Lockout** - 5 consecutive wrong passwords lock the account for 15 minutes
 - **Password Hashing** - bcrypt with 12 salt rounds
-- **JWT Tokens** - Secure authentication tokens
+- **JWT Tokens** - HS256-pinned, 1 day default lifetime, revoked on logout / role change / deactivation
+- **Least-privilege registration** - roles cannot be self-assigned
+- **NoSQL injection protection** - escaped search input, `$`-operator keys rejected in JSON bodies
+- **OAuth 2.0** - Sign in with Discord (Authorization Code grant)
 
 ---
 
@@ -360,7 +439,7 @@ Ensure your local backend environment variables are established before booting t
 \`\`\`properties
 # Example /packages/backend/.env
 JWT_SECRET=super_secret_local_key
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=1d
 RATE_LIMIT_MAX_REQUESTS=300
 \`\`\`
 
