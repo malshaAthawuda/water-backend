@@ -20,6 +20,11 @@ const createReportSchema = Joi.object({
             'string.pattern.base': 'Please provide a valid Sri Lankan NIC number',
             'any.required': 'NIC number is required',
         }),
+    email: Joi.string()
+        .trim()
+        .email()
+        .allow(null, '')
+        .optional(),
 });
 
 // ── Reusable sub-schemas ──────────────────────────────────────

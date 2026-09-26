@@ -60,8 +60,8 @@ export function clearReportCredentials() {
  * Step 1: Initialize a new public report.
  * Returns { report, trackingCode, accessToken }
  */
-export const createPublicReport = async (nic) => {
-    const { data } = await publicApi.post('/public-reports', { nic });
+export const createPublicReport = async (nic, email) => {
+    const { data } = await publicApi.post('/public-reports', { nic, email: email || undefined });
     const { report, trackingCode, accessToken } = data.data;
     // Persist for subsequent wizard steps
     saveReportCredentials(accessToken, trackingCode);

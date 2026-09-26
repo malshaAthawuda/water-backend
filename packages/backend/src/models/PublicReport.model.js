@@ -66,6 +66,19 @@ const publicReportSchema = new mongoose.Schema(
             default: null,
             index: true,
         },
+        email: {
+            type: String,
+            trim: true,
+            lowercase: true,
+            default: null,
+            index: true,
+        },
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
+            index: true,
+        },
 
         // ── Water Source ──────────────────────────────────────────
         waterSource: {
