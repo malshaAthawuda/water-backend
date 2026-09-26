@@ -463,8 +463,8 @@ const banUser = asyncHandler(async (req, res) => {
         throw ApiError.badRequest('Ban type must be "ip" or "nic"');
     }
 
-    if (!value) {
-        throw ApiError.badRequest('Ban value is required');
+    if (typeof value !== 'string' || !value.trim()) {
+        throw ApiError.badRequest('Ban value is required and must be a string');
     }
 
     const existingBan = await BannedUser.findOne({ type, value });
@@ -500,8 +500,8 @@ const unbanUser = asyncHandler(async (req, res) => {
         throw ApiError.badRequest('Ban type must be "ip" or "nic"');
     }
 
-    if (!value) {
-        throw ApiError.badRequest('Ban value is required');
+    if (typeof value !== 'string' || !value.trim()) {
+        throw ApiError.badRequest('Ban value is required and must be a string');
     }
 
     const existingBan = await BannedUser.findOne({ type, value });

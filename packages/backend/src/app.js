@@ -8,6 +8,7 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 const { errorConverter, errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
+const { rejectMongoOperators } = require('./middlewares/noSqlInjection.middleware');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 
@@ -49,6 +50,9 @@ if (config.env !== 'test') {
 // Body parsing
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Block MongoDB operator injection ({"$ne": null} etc.) in request bodies
+app.use(rejectMongoOperators);
 
 // Response compression
 app.use(compression());
