@@ -6,8 +6,9 @@ const { User } = require('../models/User.model');
 
 // Smallest byte sequences that start with each real file signature.
 const b64 = (...parts) => Buffer.concat(parts).toString('base64');
-const PNG = b64(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16));
-const JPEG = b64(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16));
+// Genuine, complete tiny images (real signatures + closing markers).
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const JPEG = '/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==';
 const WEBP = b64(Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8));
 const HTML = Buffer.from('<html><script>alert(1)</script></html>').toString('base64');
 
@@ -124,6 +125,55 @@ describe('Public report photo upload validation', () => {
 
             expect(res.status).toBe(400);
             expect(await storedImages()).toHaveLength(0);
+        });
+    });
+
+    describe('deeper structural checks', () => {
+        // Build a PNG with chosen dimensions; optionally omit the closing IEND chunk.
+        const buildPng = (width, height, { withIend = true } = {}) => {
+            const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+            const w = Buffer.alloc(4); w.writeUInt32BE(width);
+            const h = Buffer.alloc(4); h.writeUInt32BE(height);
+            const ihdr = Buffer.concat([
+                Buffer.from([0, 0, 0, 13]), Buffer.from('IHDR'),
+                w, h, Buffer.from([8, 2, 0, 0, 0]), Buffer.alloc(4),
+            ]);
+            const iend = Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+            return Buffer.concat(withIend ? [sig, ihdr, iend] : [sig, ihdr]).toString('base64');
+        };
+
+        it('should reject a PNG with no closing IEND chunk (incomplete)', async () => {
+            const res = await upload([
+                { imageType: 'water_source', contentType: 'image/png', data: buildPng(4, 4, { withIend: false }) },
+            ]);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('incomplete');
+        });
+
+        it('should reject a JPEG with no closing EOI marker (incomplete)', async () => {
+            const truncated = Buffer.from(JPEG, 'base64').subarray(0, -2).toString('base64');
+            const res = await upload([{ imageType: 'water_source', contentType: 'image/jpeg', data: truncated }]);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('incomplete');
+        });
+
+        it('should reject an image whose dimensions are too large', async () => {
+            const res = await upload([
+                { imageType: 'water_source', contentType: 'image/png', data: buildPng(20000, 20000) },
+            ]);
+
+            expect(res.status).toBe(400);
+            expect(JSON.stringify(res.body)).toContain('dimensions');
+        });
+
+        it('should accept a normal-sized complete PNG', async () => {
+            const res = await upload([
+                { imageType: 'water_source', contentType: 'image/png', data: buildPng(640, 480) },
+            ]);
+
+            expect(res.status).toBe(200);
         });
     });
 
