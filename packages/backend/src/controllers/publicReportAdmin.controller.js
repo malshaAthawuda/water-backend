@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const { detectImageType, stripDataUriPrefix } = require('../utils/imageValidation');
+const { containsFilter } = require('../utils/safeSearch');
 
 // ─── List all reports (with pagination, filtering, sorting) ──────
 const listReports = asyncHandler(async (req, res) => {
@@ -25,9 +26,9 @@ const listReports = asyncHandler(async (req, res) => {
     const filter = {};
 
     if (status) filter.mod_status = status;
-    if (nic) filter.nic = { $regex: nic, $options: 'i' };
+    if (nic) filter.nic = containsFilter(nic, 'nic');
     if (waterSource) filter.waterSource = waterSource;
-    if (district) filter['location.district'] = { $regex: district, $options: 'i' };
+    if (district) filter['location.district'] = containsFilter(district, 'district');
     if (completed !== undefined) filter.wizardCompleted = completed === 'true';
     if (dateFrom || dateTo) {
         filter.createdAt = {};
