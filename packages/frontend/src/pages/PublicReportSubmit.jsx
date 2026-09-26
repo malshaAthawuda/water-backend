@@ -11,9 +11,28 @@ import {
     QrCode as QrCodeIcon,
     CheckCircle as CheckCircleIcon,
     ContentCopy as ContentCopyIcon,
+    Close as CloseIcon,
 } from '@mui/icons-material';
 import { createPublicReport, updatePublicReport, submitPublicReport, uploadPublicReportImage } from '../services/publicReportService';
 import { useAuth } from '../context/AuthContext';
+
+// Photo rules (the server re-checks the real file bytes; this is only for quick feedback)
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_PHOTOS = 10;
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const INVALID_PHOTO_MESSAGE =
+    'We couldn’t accept that file. Please make sure every photo is a real JPEG, PNG, or WebP image.';
+
+// Turn an upload error into a message that names every rejected photo
+const describeUploadError = (err) => {
+    const body = err.response?.data;
+    const rejected = (body?.errors || []).filter((e) => e.filename);
+    if (rejected.length > 0) {
+        return `${rejected[0].message} Not accepted: ${rejected.map((e) => e.filename).join(', ')}`;
+    }
+    if (body?.errors?.[0]?.message) return body.errors[0].message;
+    return body?.message || err.message || 'Could not upload the photos';
+};
 
 const WATER_SOURCES = ['well', 'river', 'lake', 'tap', 'tank', 'canal', 'spring', 'rainwater', 'borehole', 'other'];
 
@@ -44,8 +63,9 @@ export default function PublicReportSubmit() {
     const [location, setLocation] = useState({ district: '', city: '', address: '' });
     const [appearance, setAppearance] = useState('');
     const [turbidity, setTurbidity] = useState('');
-    const [image, setImage] = useState(null);
-    const [imageUploaded, setImageUploaded] = useState(false);
+    // Selected photos; the first `uploadedCount` have already been saved on the server
+    const [photos, setPhotos] = useState([]);
+    const [uploadedCount, setUploadedCount] = useState(0);
 
     const steps = ['Identity', 'Details', 'Photo (Optional)', 'Review'];
     const isUserPortal = isAuthenticated && user?.role === 'USER';
@@ -80,20 +100,23 @@ export default function PublicReportSubmit() {
                     currentStep: 2
                 });
             } else if (activeStep === 2) {
-                // Step 3: Image (optional). Upload to the hardened endpoint, which
-                // rejects anything that is not a genuine JPEG/PNG/WebP.
-                if (image && !imageUploaded) {
-                    const dataUrl = await fileToBase64(image);
-                    await uploadPublicReportImage(reportId, {
-                        images: [
-                            {
-                                imageType: 'water_source',
-                                contentType: image.type || 'application/octet-stream',
-                                data: dataUrl,
-                            },
-                        ],
-                    });
-                    setImageUploaded(true);
+                // Step 3: Photos (optional). New photos go up in one request to the
+                // hardened endpoint, which rejects anything that is not a genuine
+                // JPEG/PNG/WebP. The batch is all-or-nothing on the server.
+                const pending = photos.slice(uploadedCount);
+                if (pending.length > 0) {
+                    const images = await Promise.all(pending.map(async (file) => ({
+                        imageType: 'water_source',
+                        contentType: file.type || 'application/octet-stream',
+                        data: await fileToBase64(file),
+                        filename: file.name,
+                    })));
+                    try {
+                        await uploadPublicReportImage(reportId, { images });
+                    } catch (uploadErr) {
+                        throw new Error(describeUploadError(uploadErr));
+                    }
+                    setUploadedCount(photos.length);
                 }
             } else if (activeStep === steps.length - 1) {
                 // Final submit
@@ -107,6 +130,31 @@ export default function PublicReportSubmit() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleAddPhotos = (fileList) => {
+        setError(null);
+        const files = Array.from(fileList || []);
+        const invalid = files.filter((f) => !ALLOWED_PHOTO_TYPES.includes(f.type));
+        const tooBig = files.filter((f) => ALLOWED_PHOTO_TYPES.includes(f.type) && f.size > MAX_PHOTO_BYTES);
+        const valid = files.filter((f) => ALLOWED_PHOTO_TYPES.includes(f.type) && f.size <= MAX_PHOTO_BYTES);
+
+        const room = MAX_PHOTOS - photos.length;
+        setPhotos((prev) => [...prev, ...valid.slice(0, Math.max(room, 0))]);
+
+        if (invalid.length > 0) {
+            setError(`${INVALID_PHOTO_MESSAGE} Not accepted: ${invalid.map((f) => f.name).join(', ')}`);
+        } else if (tooBig.length > 0) {
+            setError(`Each photo must be under 5MB. Not accepted: ${tooBig.map((f) => f.name).join(', ')}`);
+        } else if (valid.length > room) {
+            setError(`You can add up to ${MAX_PHOTOS} photos per report.`);
+        }
+    };
+
+    // Only photos that have not been uploaded yet can be removed
+    const handleRemovePhoto = (index) => {
+        setError(null);
+        setPhotos((prev) => prev.filter((_, i) => i !== index));
     };
 
     const handleBack = () => {
@@ -311,26 +359,58 @@ export default function PublicReportSubmit() {
                             {/* Step 2: Photo */}
                             {activeStep === 2 && (
                                 <Box sx={{ maxWidth: 400, mx: 'auto', textAlign: 'center' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Upload a Photo</Typography>
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Upload Photos</Typography>
                                     <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-                                        A photo of the water source helps moderators verify your report.
+                                        Photos of the water source help moderators verify your report.
+                                        Add up to {MAX_PHOTOS} JPEG, PNG or WebP images (5MB each).
                                     </Typography>
                                     <Button
                                         variant="outlined"
                                         component="label"
                                         fullWidth
+                                        disabled={photos.length >= MAX_PHOTOS}
                                         sx={{ py: 4, borderStyle: 'dashed', borderWidth: 2, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 1 }}
                                     >
                                         <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
                                         <Typography sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
-                                            {image ? image.name : 'Click to select an image (optional)'}
+                                            {photos.length > 0 ? 'Add more photos' : 'Click to select photos (optional)'}
                                         </Typography>
-                                        <input type="file" hidden accept="image/*" onChange={(e) => { setImage(e.target.files[0]); setImageUploaded(false); setError(null); }} />
+                                        <input
+                                            type="file"
+                                            hidden
+                                            multiple
+                                            accept={ALLOWED_PHOTO_TYPES.join(',')}
+                                            onChange={(e) => { handleAddPhotos(e.target.files); e.target.value = ''; }}
+                                        />
                                     </Button>
-                                    {image && (
-                                        <Button size="small" color="error" sx={{ mt: 1, textTransform: 'none' }} onClick={() => { setImage(null); setImageUploaded(false); setError(null); }}>
-                                            Remove Image
-                                        </Button>
+                                    {photos.length > 0 && (
+                                        <Stack spacing={1} sx={{ mt: 2, textAlign: 'left' }}>
+                                            {photos.map((file, index) => (
+                                                <Box
+                                                    key={`${file.name}-${index}`}
+                                                    sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, border: '1px solid #EEE', borderRadius: 2 }}
+                                                >
+                                                    <Box
+                                                        component="img"
+                                                        src={URL.createObjectURL(file)}
+                                                        alt=""
+                                                        onLoad={(e) => URL.revokeObjectURL(e.currentTarget.src)}
+                                                        sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1 }}
+                                                    />
+                                                    <Typography variant="body2" noWrap sx={{ flex: 1 }}>{file.name}</Typography>
+                                                    {index < uploadedCount ? (
+                                                        <Chip label="Uploaded" size="small" color="success" />
+                                                    ) : (
+                                                        <Button size="small" color="error" onClick={() => handleRemovePhoto(index)} sx={{ minWidth: 0 }}>
+                                                            <CloseIcon fontSize="small" />
+                                                        </Button>
+                                                    )}
+                                                </Box>
+                                            ))}
+                                            <Typography variant="caption" color="text.secondary">
+                                                {photos.length} of {MAX_PHOTOS} photos
+                                            </Typography>
+                                        </Stack>
                                     )}
                                 </Box>
                             )}
@@ -360,8 +440,10 @@ export default function PublicReportSubmit() {
                                                 <Typography variant="body2" fontWeight={600}>{appearance || '—'}</Typography>
                                             </Box>
                                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                <Typography variant="body2" color="text.secondary">Photo</Typography>
-                                                <Typography variant="body2" fontWeight={600}>{image ? '📷 Attached' : 'None'}</Typography>
+                                                <Typography variant="body2" color="text.secondary">Photos</Typography>
+                                                <Typography variant="body2" fontWeight={600}>
+                                                    {photos.length > 0 ? `📷 ${photos.length} attached` : 'None'}
+                                                </Typography>
                                             </Box>
                                             <Divider />
                                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
