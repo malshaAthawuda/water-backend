@@ -22,7 +22,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     const decoded = authService.verifyToken(token);
 
     // Get user from database
-    const user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id).select('+tokenVersion');
 
     if (!user) {
         throw ApiError.unauthorized('User belonging to this token no longer exists.');
@@ -31,6 +31,11 @@ const authenticate = asyncHandler(async (req, res, next) => {
     // Check if user is active
     if (!user.isActive) {
         throw ApiError.unauthorized('Account is deactivated. Please contact support.');
+    }
+
+    // Reject tokens revoked by logout / role change / deactivation
+    if ((decoded.tv || 0) !== (user.tokenVersion || 0)) {
+        throw ApiError.unauthorized('Session has been revoked. Please login again.');
     }
 
     // Check if password was changed after token was issued

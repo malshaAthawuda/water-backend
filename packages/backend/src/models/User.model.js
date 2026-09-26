@@ -56,6 +56,13 @@ const userSchema = new mongoose.Schema(
         passwordChangedAt: {
             type: Date,
         },
+        // Incremented to revoke every JWT issued to this user so far
+        // (logout, role change, deactivation). Tokens carry it as "tv".
+        tokenVersion: {
+            type: Number,
+            default: 0,
+            select: false,
+        },
         // Brute-force protection (see auth.service.login)
         failedLoginAttempts: {
             type: Number,
@@ -73,6 +80,7 @@ const userSchema = new mongoose.Schema(
             virtuals: true,
             transform: function (doc, ret) {
                 delete ret.password;
+                delete ret.tokenVersion;
                 delete ret.failedLoginAttempts;
                 delete ret.lockUntil;
                 delete ret.__v;
@@ -132,6 +140,13 @@ userSchema.methods.changedPasswordAfter = function (jwtTimestamp) {
  */
 userSchema.methods.isLocked = function () {
     return !!(this.lockUntil && this.lockUntil.getTime() > Date.now());
+};
+
+/**
+ * Static method to revoke all existing tokens for a user
+ */
+userSchema.statics.revokeTokens = function (userId) {
+    return this.updateOne({ _id: userId }, { $inc: { tokenVersion: 1 } });
 };
 
 /**

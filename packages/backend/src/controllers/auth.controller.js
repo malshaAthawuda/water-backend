@@ -2,6 +2,7 @@ const authService = require('../services/auth.service');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const { ModerationLog, ModerationAction } = require('../models/ModerationLog.model');
+const { User } = require('../models/User.model');
 
 /**
  * @desc    Register a new user
@@ -49,11 +50,17 @@ const getMe = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Logout user (simply to log the action for moderators)
+ * @desc    Logout user - revokes every token issued to this user and logs
+ *          the action for moderators
  * @route   POST /api/v1/auth/logout
  * @access  Private
  */
 const logout = asyncHandler(async (req, res) => {
+    // JWTs are stateless, so deleting the token in the browser is not enough:
+    // a copied/stolen token would keep working until it expires. Bumping the
+    // tokenVersion makes every previously issued token fail in authenticate.
+    await User.revokeTokens(req.user._id);
+
     if (['MODERATOR', 'ADMIN'].includes(req.user.role)) {
         await ModerationLog.create({
             action: ModerationAction.LOGOUT,

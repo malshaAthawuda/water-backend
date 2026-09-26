@@ -5,13 +5,22 @@ const { User, UserRole } = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 
+const JWT_ALGORITHM = 'HS256';
+
 /**
  * Generate JWT token for user
+ * The token embeds the user's current tokenVersion ("tv") so it can be
+ * revoked server-side by incrementing that counter.
  */
-const generateToken = (userId) => {
-    return jwt.sign({ id: userId }, config.jwt.secret, {
-        expiresIn: config.jwt.expiresIn,
-    });
+const generateToken = (user) => {
+    return jwt.sign(
+        { id: user._id, tv: user.tokenVersion || 0 },
+        config.jwt.secret,
+        {
+            algorithm: JWT_ALGORITHM,
+            expiresIn: config.jwt.expiresIn,
+        }
+    );
 };
 
 /**
@@ -19,7 +28,7 @@ const generateToken = (userId) => {
  */
 const verifyToken = (token) => {
     try {
-        return jwt.verify(token, config.jwt.secret);
+        return jwt.verify(token, config.jwt.secret, { algorithms: [JWT_ALGORITHM] });
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             throw ApiError.unauthorized('Token has expired');
@@ -55,7 +64,7 @@ const register = async (userData) => {
     });
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     logger.info(`New user registered: ${email}`);
 
@@ -116,7 +125,7 @@ const registerFailedLogin = async (user) => {
 const login = async (email, password) => {
     // Find user by email and include password field
     const user = await User.findOne({ email: email.toLowerCase() })
-        .select('+password +failedLoginAttempts +lockUntil');
+        .select('+password +failedLoginAttempts +lockUntil +tokenVersion');
 
     if (!user) {
         await bcrypt.compare(password, await getDummyPasswordHash());
@@ -157,7 +166,7 @@ const login = async (email, password) => {
     const { ModerationLog, ModerationAction } = require('../models/ModerationLog.model');
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     logger.info(`User logged in: ${email}`);
 
