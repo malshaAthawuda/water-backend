@@ -17,7 +17,8 @@ const config = {
   
   jwt: {
     secret: process.env.JWT_SECRET,
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    // Short default lifetime limits how long a leaked token is useful
+    expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   },
   
   weather: {
