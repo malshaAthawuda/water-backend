@@ -20,7 +20,6 @@ export class AuthPage {
     // ── Register page ─────────────────────────────────────────────
     this.nameInput           = page.getByLabel(/Full Name/i);
     this.confirmPasswordInput = page.getByLabel(/Confirm Password/i);
-    this.roleSelect          = page.locator('[id*="role"]').or(page.getByLabel(/Role/i));
     this.registerButton      = page.getByRole('button', { name: /Create Account/i });
     this.registerHeading     = page.getByRole('heading', { name: /Create Account/i });
     this.signInLink          = page.getByText(/Sign in/i).last();
@@ -43,14 +42,11 @@ export class AuthPage {
     await this.loginButton.click();
   }
 
-  async register(name, email, password, confirmPassword = password, role = 'USER') {
+  async register(name, email, password, confirmPassword = password) {
     await this.nameInput.fill(name);
     await this.emailInput.fill(email);
     await this.passwordInput.fill(password);
     await this.confirmPasswordInput.fill(confirmPassword);
-    // Select role from MUI Select (opens dropdown)
-    await this.page.getByLabel('Role').click();
-    await this.page.getByRole('option', { name: role }).click();
     await this.registerButton.click();
   }
 }
